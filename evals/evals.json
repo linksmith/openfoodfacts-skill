@@ -1,0 +1,53 @@
+{
+  "skill_name": "openfoodfacts",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I'm writing an article about ultra-processed foods in French supermarkets. Can you help me find out what percentage of breakfast cereals are NOVA 4?",
+      "expected_output": "Complete Python code using OFFParquet that queries food.parquet with DuckDB, calls nova_distribution(country='en:france', category='en:breakfast-cereals'), reports the NOVA 4 percentage with sample size and coverage caveat, and produces a bar chart with finding-based title and ODbL attribution.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "I want to investigate whether titanium dioxide (E171) is still present in food products sold in EU countries, even though it was banned in 2022.",
+      "expected_output": "Complete Python code using OFFParquet that calls products_with_additive('en:e171') filtered to EU countries, calls additive_country_comparison('en:e171') to compare prevalence across countries, reports count of products still listing E171, and caveats that OFF data reflects crowdsourced product entries which may lag official reformulations.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Do organic products in France actually have better nutrition scores than conventional ones?",
+      "expected_output": "Complete Python code using OFFParquet that calls label_nutrition_comparison(label='en:organic', country='en:france'), compares pct_ab and pct_nova4 between organic and conventional, produces a grouped bar chart, and includes the caveat that 'organic' refers to farming methods not nutritional quality, and that product mix differs between organic and conventional sets.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Compare Nutri-Score distributions across France, Germany, the Netherlands, Spain, and Italy for breakfast cereals.",
+      "expected_output": "Complete Python code using OFFParquet that calls nutriscore_by_country(countries=[...], category='en:breakfast-cereals'), pivots the result, produces a grouped bar chart per country coloured by official Nutri-Score colours, includes sample sizes per country, and notes that France will have significantly more products than other countries.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Which additives appear most frequently in sodas sold in France? Are any of them controversial?",
+      "expected_output": "Complete Python code using OFFParquet that calls top_additives(country='en:france', category='en:sodas'), highlights additives from ADDITIVES_OF_CONCERN, produces a horizontal bar chart, and notes which additives have EU controversy (azo dyes, aspartame, benzene-forming combinations).",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "How has the Open Food Facts database grown over time, and when did the Netherlands start contributing significant data?",
+      "expected_output": "Complete Python code using OFFParquet that calls product_growth_by_year() for global and product_growth_by_year(country='en:netherlands'), produces a line chart, and clearly caveats that created_t reflects when products were ENTERED into OFF — not when they were manufactured or reformulated.",
+      "files": []
+    }
+  ,{
+      "id": 7,
+      "prompt": "showcase Kellogg's",
+      "expected_output": "Detects the 'showcase' trigger. Calls generate_brand_showcase(brand=\"Kellogg's\", parquet_key=\"eu\"). Reports key findings: product count, NOVA 4 percentage, dominant Nutri-Score grade, avg sugar vs. category average. States the output file path output/kelloggs_showcase.html. Includes a data completeness caveat.",
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "showcase Alpro using Netherlands data",
+      "expected_output": "Detects 'showcase Alpro' trigger with explicit country context. Calls generate_brand_showcase(brand='Alpro', parquet_key='nl'). Alpro is a plant-based dairy brand — findings should highlight NOVA group distribution and whether plant-based = healthier on Nutri-Score. Reports output path and key findings.",
+      "files": []
+    }
+  ]
+}

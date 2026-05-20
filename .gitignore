@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+
+# Data files (large — download via download_data.py)
+data/
+output/
+
+# IDE
+.vscode/
+.idea/
