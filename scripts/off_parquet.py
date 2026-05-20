@@ -391,6 +391,8 @@ class OFFParquet:
             given,
             Path(DEFAULT_DATA_DIR) / name,
             Path("..") / DEFAULT_DATA_DIR / name,
+            Path.home() / "data" / "openfoodfacts" / name,  # VM standard location
+            Path.home() / "data" / name,
             Path.home() / DEFAULT_DATA_DIR / name,
             Path.home() / name,
         ]

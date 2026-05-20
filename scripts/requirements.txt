@@ -1,0 +1,5 @@
+duckdb>=0.10
+pandas>=2.0
+requests>=2.31
+tqdm>=4.66
+openfoodfacts>=1.0
