@@ -886,10 +886,8 @@ class OFFParquet:
                         WHERE list_contains(additives_tags, '{additive_tag}'))
                     / NULLIF(COUNT(*), 0), 2)                      AS pct_with_additive
             FROM (
-                SELECT
-                    UNNEST(countries_tags) AS country,
-                    additives_tags
-                FROM food
+                SELECT c AS country, additives_tags
+                FROM food, UNNEST(countries_tags) AS t(c)
                 WHERE countries_tags IS NOT NULL
             ) t
             WHERE country IN ({countries_sql})
@@ -903,14 +901,16 @@ class OFFParquet:
 
     def brand_comparison(
         self,
-        brands: list,
+        brands,
         country: Optional[str] = None,
         metrics: Optional[list] = None,
     ) -> pd.DataFrame:
         """Compare multiple brands on Nutri-Score and NOVA distribution.
 
         Args:
-            brands: List of brand names (case-insensitive substring match).
+            brands: Brand name string OR list of brand names
+                    (case-insensitive substring match).
+                    e.g. "Nestlé" or ["Nestlé", "Danone", "Unilever"]
             country: Filter by country tag.
             metrics: Which scores to include. Default: nutriscore + nova.
 
@@ -918,9 +918,12 @@ class OFFParquet:
             DataFrame with one row per brand.
 
         Example:
-            off.brand_comparison(["Nestlé", "Danone", "Unilever"],
-                                 country="en:france")
+            off.brand_comparison("Nestlé", country="en:france")
+            off.brand_comparison(["Nestlé", "Danone"], country="en:france")
         """
+        # Accept either a single string or a list
+        if isinstance(brands, str):
+            brands = [brands]
         brand_conditions = " OR ".join(
             f"LOWER(brands) LIKE '%{b.lower()}%'" for b in brands
         )
