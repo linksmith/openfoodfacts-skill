@@ -69,7 +69,7 @@ may not be statistically representative. Flag this in any published output.
 |------|--------|-------|----------------|-------|
 | `food.parquet` | Global | Full dataset | ~4.5M | All countries |
 | `food_eu_all.parquet` | EU combined | EU-27 combined | ~3–4M | Deduped union of all EU countries |
-| `food_us.parquet` | Americas | United States | ~200K | |
+| `food_united-states.parquet` | Americas | United States | ~906K | |
 | `food_france.parquet` | EU | France | ~1.5–2M | Largest OFF dataset |
 | `food_germany.parquet` | EU | Germany | ~200–400K | |
 | `food_united-kingdom.parquet` | Non-EU Europe | United Kingdom | ~150–300K | |
@@ -385,7 +385,8 @@ All methods return pandas DataFrames. For custom analyses, use `off.query(sql)`.
 ```python
 # Filter by country (tags are arrays)
 off.query("""
-    SELECT product_name, nutriscore_grade
+    SELECT array_to_string(list_transform(product_name, x -> x."text"), ' / ') AS product_name,
+           nutriscore_grade
     FROM food
     WHERE list_contains(countries_tags, 'en:france')
     LIMIT 100
@@ -481,10 +482,22 @@ The parquet has ~180 columns. The most useful for investigations:
 | Column | Type | Description |
 |---|---|---|
 | `code` | string | Product barcode (EAN-13/UPC) |
-| `product_name` | string | Product name |
+| `product_name` | `STRUCT(lang VARCHAR, "text" VARCHAR)[]` | Product name in multiple languages |
 | `brands` | string | Brand(s), comma-separated |
 | `brands_tags` | list[string] | Brand taxonomy tags |
 | `lang` | string | Product language code |
+
+**`product_name` is a multilingual struct array** — not a plain string. To extract readable text in SQL:
+```sql
+-- Display name (all language variants joined)
+array_to_string(list_transform(product_name, x -> x."text"), ' / ') AS product_name
+
+-- Search by name
+WHERE lower(array_to_string(list_transform(product_name, x -> x."text"), ' ')) LIKE lower('%olive oil%')
+
+-- Check if non-empty
+WHERE len(product_name) > 0
+```
 
 ### Geography
 | Column | Type | Description |
@@ -506,22 +519,36 @@ The parquet has ~180 columns. The most useful for investigations:
 | `nutriscore_grade` | string | A–E (null if unavailable) |
 | `nutriscore_score` | integer | Underlying numeric score |
 | `nova_group` | integer | 1–4 processing level |
-| `ecoscore_grade` | string | Environmental score A–E |
+| `environmental_score_grade` | string | Environmental score A–E (renamed from `ecoscore_grade` in 2025) |
 
-### Nutrition (in `nutriments` struct)
-Access struct fields: `nutriments['energy-kcal_100g']`  
+### Nutrition (in `nutriments` array)
+
+**Schema (2025+):** `nutriments` is `STRUCT(name VARCHAR, "100g" FLOAT, serving FLOAT, unit VARCHAR, ...)[]` — an **array of structs**, one entry per nutrient.
+
+**⚠ Old syntax BROKEN:** `nutriments['sugars_100g']` → **ConversionError**
+
+**Correct extraction pattern:**
+```sql
+-- Single value per row
+list_extract(list_filter(nutriments, x -> x.name = 'sugars'), 1)."100g"  AS sugars
+
+-- In aggregation
+ROUND(AVG(list_extract(list_filter(nutriments, x -> x.name = 'sugars'), 1)."100g"), 1)
+```
+
 Or with the helper: `off.nutriments(country, category)`
 
-| Field | Description |
+| Nutrient name (`.name` field) | Description |
 |---|---|
-| `energy-kcal_100g` | Energy in kcal per 100g |
-| `fat_100g` | Total fat |
-| `saturated-fat_100g` | Saturated fat |
-| `carbohydrates_100g` | Total carbohydrates |
-| `sugars_100g` | Sugars |
-| `fiber_100g` | Dietary fibre |
-| `proteins_100g` | Proteins |
-| `salt_100g` | Salt |
+| `energy-kcal` | Energy in kcal per 100g |
+| `fat` | Total fat |
+| `saturated-fat` | Saturated fat |
+| `carbohydrates` | Total carbohydrates |
+| `sugars` | Sugars |
+| `fiber` | Dietary fibre |
+| `proteins` | Proteins |
+| `salt` | Salt |
+| `sodium` | Sodium |
 
 ### Ingredients & additives
 | Column | Type | Description |

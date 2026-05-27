@@ -68,7 +68,7 @@ EU_FOCUS_COUNTRIES = [
 #
 # Files available:
 #   food_eu_all.parquet          — All EU-27 countries combined (deduped)
-#   food_us.parquet              — United States
+#   food_united-states.parquet   — United States
 #   food_<slug>.parquet          — Per-country (EU + non-EU Europe)
 #   manifest.json                — Row counts, sizes, generated timestamp
 #
@@ -89,7 +89,7 @@ COUNTRY_FILES: dict[str, str] = {
     # EU combined
     "eu_all": "food_eu_all.parquet",
     # US
-    "united-states": "food_us.parquet",
+    "united-states": "food_united-states.parquet",
     # EU-27
     "austria":          "food_austria.parquet",
     "belgium":          "food_belgium.parquet",
@@ -161,20 +161,51 @@ def load_manifest(data_dir: str = DEFAULT_DATA_DIR) -> dict:
 
 # Additives of journalistic interest (EU-relevant controversies)
 ADDITIVES_OF_CONCERN = {
-    "en:e171": "Titanium dioxide (banned EU 2022)",
-    "en:e621": "MSG / Monosodium glutamate",
-    "en:e951": "Aspartame",
-    "en:e150d": "Sulphite ammonia caramel",
-    "en:e102": "Tartrazine (azo dye, hyperactivity)",
-    "en:e110": "Sunset Yellow FCF (azo dye)",
-    "en:e122": "Carmoisine / Azorubine (azo dye)",
-    "en:e124": "Ponceau 4R (azo dye)",
-    "en:e129": "Allura Red (azo dye)",
-    "en:e211": "Sodium benzoate",
-    "en:e320": "BHA / Butylated hydroxyanisole",
-    "en:e407": "Carrageenan",
+    # Banned / controversial
+    "en:e171": "Titanium dioxide (banned EU 2022) ⚠",
+    "en:e621": "MSG / Monosodium glutamate ⚠",
+    "en:e951": "Aspartame ⚠",
+    "en:e150d": "Sulphite ammonia caramel ⚠",
+    "en:e320": "BHA / Butylated hydroxyanisole ⚠",
+    "en:e407": "Carrageenan ⚠",
+    # Azo dyes (children's hyperactivity)
+    "en:e102": "Tartrazine (azo dye, hyperactivity) ⚠",
+    "en:e110": "Sunset Yellow FCF (azo dye) ⚠",
+    "en:e122": "Carmoisine / Azorubine (azo dye) ⚠",
+    "en:e124": "Ponceau 4R (azo dye) ⚠",
+    "en:e129": "Allura Red (azo dye) ⚠",
+    "en:e211": "Sodium benzoate ⚠",
+    # Common (not controversial but frequent in ultra-processed foods)
+    "en:e471": "Mono- and diglycerides of fatty acids",
     "en:e412": "Guar gum",
-    "en:e471": "Mono- and diglycerides",
+    "en:e415": "Xanthan gum",
+    "en:e322": "Lecithins (soy/sunflower)",
+    "en:e330": "Citric acid",
+    "en:e500": "Sodium carbonates",
+    "en:e501": "Potassium carbonates",
+    "en:e503": "Ammonium carbonates",
+    "en:e306": "Tocopherol-rich extract (natural vitamin E)",
+    "en:e307": "Alpha-tocopherol (synthetic vitamin E)",
+    "en:e160a": "Carotenes",
+    "en:e160c": "Paprika extract",
+    "en:e100": "Curcumin",
+    "en:e150a": "Plain caramel",
+    "en:e150c": "Ammonia caramel",
+    "en:e420": "Sorbitol",
+    "en:e421": "Mannitol",
+    "en:e950": "Acesulfame K",
+    "en:e952": "Cyclamates",
+    "en:e955": "Sucralose",
+    "en:e960": "Steviol glycosides (stevia)",
+    "en:e420i": "Sorbitol",
+    "en:e481": "Sodium stearoyl-2-lactylate",
+    "en:e482": "Calcium stearoyl-2-lactylate",
+    "en:e1422": "Acetylated distarch adipate",
+    "en:e1442": "Hydroxy propyl distarch phosphate",
+    "en:e1420": "Acetylated starch",
+    "en:e451": "Triphosphates",
+    "en:e452": "Polyphosphates",
+    "en:e340": "Potassium phosphates",
 }
 
 
@@ -410,7 +441,7 @@ class OFFParquet:
                 COUNT(*)                                           AS total_products,
                 COUNT(*) FILTER (WHERE nutriscore_grade IS NOT NULL) AS has_nutriscore,
                 COUNT(*) FILTER (WHERE nova_group IS NOT NULL)     AS has_nova_group,
-                COUNT(*) FILTER (WHERE ecoscore_grade IS NOT NULL) AS has_ecoscore,
+                COUNT(*) FILTER (WHERE environmental_score_grade IS NOT NULL) AS has_ecoscore,
                 COUNT(DISTINCT brands)                             AS distinct_brands,
                 COUNT(DISTINCT lang)                               AS distinct_languages,
                 MIN(to_timestamp(created_t))::DATE                AS oldest_product,
@@ -855,10 +886,8 @@ class OFFParquet:
                         WHERE list_contains(additives_tags, '{additive_tag}'))
                     / NULLIF(COUNT(*), 0), 2)                      AS pct_with_additive
             FROM (
-                SELECT
-                    UNNEST(countries_tags) AS country,
-                    additives_tags
-                FROM food
+                SELECT c AS country, additives_tags
+                FROM food, UNNEST(countries_tags) AS t(c)
                 WHERE countries_tags IS NOT NULL
             ) t
             WHERE country IN ({countries_sql})
@@ -872,14 +901,16 @@ class OFFParquet:
 
     def brand_comparison(
         self,
-        brands: list,
+        brands,
         country: Optional[str] = None,
         metrics: Optional[list] = None,
     ) -> pd.DataFrame:
         """Compare multiple brands on Nutri-Score and NOVA distribution.
 
         Args:
-            brands: List of brand names (case-insensitive substring match).
+            brands: Brand name string OR list of brand names
+                    (case-insensitive substring match).
+                    e.g. "Nestlé" or ["Nestlé", "Danone", "Unilever"]
             country: Filter by country tag.
             metrics: Which scores to include. Default: nutriscore + nova.
 
@@ -887,9 +918,12 @@ class OFFParquet:
             DataFrame with one row per brand.
 
         Example:
-            off.brand_comparison(["Nestlé", "Danone", "Unilever"],
-                                 country="en:france")
+            off.brand_comparison("Nestlé", country="en:france")
+            off.brand_comparison(["Nestlé", "Danone"], country="en:france")
         """
+        # Accept either a single string or a list
+        if isinstance(brands, str):
+            brands = [brands]
         brand_conditions = " OR ".join(
             f"LOWER(brands) LIKE '%{b.lower()}%'" for b in brands
         )
@@ -1037,18 +1071,24 @@ class OFFParquet:
             limit: Max results.
         """
         filters = self._build_filters(country, category)
-        where = f"WHERE LOWER(product_name) LIKE '%{query.lower()}%'"
+        # product_name is STRUCT(lang, text)[] — search across all language variants
+        q = query.lower().replace("'", "''")
+        where = (
+            f"WHERE lower(array_to_string(list_transform(product_name, x -> x.\"text\"), ' '))"
+            f" LIKE '%{q}%'"
+        )
         if filters:
             where += f" AND {filters}"
 
         return self.query(f"""
             SELECT
                 code,
-                product_name,
+                array_to_string(list_transform(product_name, x -> x."text"), ' / ')
+                    AS product_name,
                 brands,
                 nutriscore_grade,
                 nova_group,
-                ecoscore_grade,
+                environmental_score_grade AS ecoscore_grade,
                 countries_tags,
                 categories_tags
             FROM food
@@ -1141,14 +1181,15 @@ class OFFParquet:
                     nutriscore_grade,
                     nova_group
                     {extra_cols},
-                    TRY_CAST(nutriments['energy-kcal_100g'] AS FLOAT)    AS energy_kcal_100g,
-                    TRY_CAST(nutriments['fat_100g'] AS FLOAT)             AS fat_100g,
-                    TRY_CAST(nutriments['saturated-fat_100g'] AS FLOAT)  AS saturated_fat_100g,
-                    TRY_CAST(nutriments['carbohydrates_100g'] AS FLOAT)  AS carbs_100g,
-                    TRY_CAST(nutriments['sugars_100g'] AS FLOAT)          AS sugars_100g,
-                    TRY_CAST(nutriments['fiber_100g'] AS FLOAT)           AS fiber_100g,
-                    TRY_CAST(nutriments['proteins_100g'] AS FLOAT)        AS proteins_100g,
-                    TRY_CAST(nutriments['salt_100g'] AS FLOAT)            AS salt_100g
+                    -- nutriments is STRUCT(name, 100g, ...)[] — extract by name field
+                    list_extract(list_filter(nutriments, x -> x.name = 'energy-kcal'), 1)."100g"    AS energy_kcal_100g,
+                    list_extract(list_filter(nutriments, x -> x.name = 'fat'), 1)."100g"             AS fat_100g,
+                    list_extract(list_filter(nutriments, x -> x.name = 'saturated-fat'), 1)."100g"  AS saturated_fat_100g,
+                    list_extract(list_filter(nutriments, x -> x.name = 'carbohydrates'), 1)."100g"  AS carbs_100g,
+                    list_extract(list_filter(nutriments, x -> x.name = 'sugars'), 1)."100g"          AS sugars_100g,
+                    list_extract(list_filter(nutriments, x -> x.name = 'fiber'), 1)."100g"           AS fiber_100g,
+                    list_extract(list_filter(nutriments, x -> x.name = 'proteins'), 1)."100g"        AS proteins_100g,
+                    list_extract(list_filter(nutriments, x -> x.name = 'salt'), 1)."100g"            AS salt_100g
                 FROM food
                 {where}
                 LIMIT {limit}

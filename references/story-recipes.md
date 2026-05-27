@@ -349,13 +349,13 @@ df_full = off.query("""
         brands,
         labels_tags,
         nutriscore_grade,
-        nutriments['sugars_100g']::FLOAT AS sugars_100g,
-        nutriments['salt_100g']::FLOAT   AS salt_100g,
-        nutriments['fat_100g']::FLOAT    AS fat_100g
+        list_extract(list_filter(nutriments, x -> x.name = 'sugars'), 1)."100g" AS sugars_100g,
+        list_extract(list_filter(nutriments, x -> x.name = 'salt'), 1)."100g"   AS salt_100g,
+        list_extract(list_filter(nutriments, x -> x.name = 'fat'), 1)."100g"    AS fat_100g
     FROM food
     WHERE list_contains(labels_tags, 'en:organic')
       AND list_contains(countries_tags, 'en:france')
-      AND nutriments IS NOT NULL
+      AND nutriments IS NOT NULL AND len(nutriments) > 0
     ORDER BY sugars_100g DESC NULLS LAST
     LIMIT 50
 """)
@@ -367,12 +367,12 @@ high_sugar_organic = off.query("""
         product_name,
         brands,
         nutriscore_grade,
-        nutriments['sugars_100g']::FLOAT AS sugars_100g,
+        list_extract(list_filter(nutriments, x -> x.name = 'sugars'), 1)."100g" AS sugars_100g,
         categories_tags
     FROM food
     WHERE list_contains(labels_tags, 'en:organic')
       AND list_contains(countries_tags, 'en:france')
-      AND nutriments['sugars_100g']::FLOAT > 20
+      AND list_extract(list_filter(nutriments, x -> x.name = 'sugars'), 1)."100g" > 20
     ORDER BY sugars_100g DESC
     LIMIT 20
 """)
@@ -549,11 +549,11 @@ off.query("""
         brands,
         nutriscore_grade,
         nova_group,
-        nutriments['sugars_100g']::FLOAT AS sugars_100g,
-        nutriments['salt_100g']::FLOAT   AS salt_100g
+        list_extract(list_filter(nutriments, x -> x.name = 'sugars'), 1)."100g" AS sugars_100g,
+        list_extract(list_filter(nutriments, x -> x.name = 'salt'), 1)."100g"   AS salt_100g
     FROM food
-    WHERE LOWER(product_name) LIKE '%chocolade%'
-       OR LOWER(product_name) LIKE '%chocolate%'
+    WHERE lower(array_to_string(list_transform(product_name, x -> x."text"), ' ')) LIKE '%chocolade%'
+       OR lower(array_to_string(list_transform(product_name, x -> x."text"), ' ')) LIKE '%chocolate%'
     AND list_contains(countries_tags, 'en:netherlands')
     ORDER BY sugars_100g DESC NULLS LAST
     LIMIT 50
