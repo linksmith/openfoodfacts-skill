@@ -161,20 +161,51 @@ def load_manifest(data_dir: str = DEFAULT_DATA_DIR) -> dict:
 
 # Additives of journalistic interest (EU-relevant controversies)
 ADDITIVES_OF_CONCERN = {
-    "en:e171": "Titanium dioxide (banned EU 2022)",
-    "en:e621": "MSG / Monosodium glutamate",
-    "en:e951": "Aspartame",
-    "en:e150d": "Sulphite ammonia caramel",
-    "en:e102": "Tartrazine (azo dye, hyperactivity)",
-    "en:e110": "Sunset Yellow FCF (azo dye)",
-    "en:e122": "Carmoisine / Azorubine (azo dye)",
-    "en:e124": "Ponceau 4R (azo dye)",
-    "en:e129": "Allura Red (azo dye)",
-    "en:e211": "Sodium benzoate",
-    "en:e320": "BHA / Butylated hydroxyanisole",
-    "en:e407": "Carrageenan",
+    # Banned / controversial
+    "en:e171": "Titanium dioxide (banned EU 2022) ⚠",
+    "en:e621": "MSG / Monosodium glutamate ⚠",
+    "en:e951": "Aspartame ⚠",
+    "en:e150d": "Sulphite ammonia caramel ⚠",
+    "en:e320": "BHA / Butylated hydroxyanisole ⚠",
+    "en:e407": "Carrageenan ⚠",
+    # Azo dyes (children's hyperactivity)
+    "en:e102": "Tartrazine (azo dye, hyperactivity) ⚠",
+    "en:e110": "Sunset Yellow FCF (azo dye) ⚠",
+    "en:e122": "Carmoisine / Azorubine (azo dye) ⚠",
+    "en:e124": "Ponceau 4R (azo dye) ⚠",
+    "en:e129": "Allura Red (azo dye) ⚠",
+    "en:e211": "Sodium benzoate ⚠",
+    # Common (not controversial but frequent in ultra-processed foods)
+    "en:e471": "Mono- and diglycerides of fatty acids",
     "en:e412": "Guar gum",
-    "en:e471": "Mono- and diglycerides",
+    "en:e415": "Xanthan gum",
+    "en:e322": "Lecithins (soy/sunflower)",
+    "en:e330": "Citric acid",
+    "en:e500": "Sodium carbonates",
+    "en:e501": "Potassium carbonates",
+    "en:e503": "Ammonium carbonates",
+    "en:e306": "Tocopherol-rich extract (natural vitamin E)",
+    "en:e307": "Alpha-tocopherol (synthetic vitamin E)",
+    "en:e160a": "Carotenes",
+    "en:e160c": "Paprika extract",
+    "en:e100": "Curcumin",
+    "en:e150a": "Plain caramel",
+    "en:e150c": "Ammonia caramel",
+    "en:e420": "Sorbitol",
+    "en:e421": "Mannitol",
+    "en:e950": "Acesulfame K",
+    "en:e952": "Cyclamates",
+    "en:e955": "Sucralose",
+    "en:e960": "Steviol glycosides (stevia)",
+    "en:e420i": "Sorbitol",
+    "en:e481": "Sodium stearoyl-2-lactylate",
+    "en:e482": "Calcium stearoyl-2-lactylate",
+    "en:e1422": "Acetylated distarch adipate",
+    "en:e1442": "Hydroxy propyl distarch phosphate",
+    "en:e1420": "Acetylated starch",
+    "en:e451": "Triphosphates",
+    "en:e452": "Polyphosphates",
+    "en:e340": "Potassium phosphates",
 }
 
 
@@ -1147,14 +1178,15 @@ class OFFParquet:
                     nutriscore_grade,
                     nova_group
                     {extra_cols},
-                    TRY_CAST(nutriments['energy-kcal_100g'] AS FLOAT)    AS energy_kcal_100g,
-                    TRY_CAST(nutriments['fat_100g'] AS FLOAT)             AS fat_100g,
-                    TRY_CAST(nutriments['saturated-fat_100g'] AS FLOAT)  AS saturated_fat_100g,
-                    TRY_CAST(nutriments['carbohydrates_100g'] AS FLOAT)  AS carbs_100g,
-                    TRY_CAST(nutriments['sugars_100g'] AS FLOAT)          AS sugars_100g,
-                    TRY_CAST(nutriments['fiber_100g'] AS FLOAT)           AS fiber_100g,
-                    TRY_CAST(nutriments['proteins_100g'] AS FLOAT)        AS proteins_100g,
-                    TRY_CAST(nutriments['salt_100g'] AS FLOAT)            AS salt_100g
+                    -- nutriments is STRUCT(name, 100g, ...)[] — extract by name field
+                    list_extract(list_filter(nutriments, x -> x.name = 'energy-kcal'), 1)."100g"    AS energy_kcal_100g,
+                    list_extract(list_filter(nutriments, x -> x.name = 'fat'), 1)."100g"             AS fat_100g,
+                    list_extract(list_filter(nutriments, x -> x.name = 'saturated-fat'), 1)."100g"  AS saturated_fat_100g,
+                    list_extract(list_filter(nutriments, x -> x.name = 'carbohydrates'), 1)."100g"  AS carbs_100g,
+                    list_extract(list_filter(nutriments, x -> x.name = 'sugars'), 1)."100g"          AS sugars_100g,
+                    list_extract(list_filter(nutriments, x -> x.name = 'fiber'), 1)."100g"           AS fiber_100g,
+                    list_extract(list_filter(nutriments, x -> x.name = 'proteins'), 1)."100g"        AS proteins_100g,
+                    list_extract(list_filter(nutriments, x -> x.name = 'salt'), 1)."100g"            AS salt_100g
                 FROM food
                 {where}
                 LIMIT {limit}

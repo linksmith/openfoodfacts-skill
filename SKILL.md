@@ -519,22 +519,36 @@ WHERE len(product_name) > 0
 | `nutriscore_grade` | string | A–E (null if unavailable) |
 | `nutriscore_score` | integer | Underlying numeric score |
 | `nova_group` | integer | 1–4 processing level |
-| `ecoscore_grade` | string | Environmental score A–E |
+| `environmental_score_grade` | string | Environmental score A–E (renamed from `ecoscore_grade` in 2025) |
 
-### Nutrition (in `nutriments` struct)
-Access struct fields: `nutriments['energy-kcal_100g']`  
+### Nutrition (in `nutriments` array)
+
+**Schema (2025+):** `nutriments` is `STRUCT(name VARCHAR, "100g" FLOAT, serving FLOAT, unit VARCHAR, ...)[]` — an **array of structs**, one entry per nutrient.
+
+**⚠ Old syntax BROKEN:** `nutriments['sugars_100g']` → **ConversionError**
+
+**Correct extraction pattern:**
+```sql
+-- Single value per row
+list_extract(list_filter(nutriments, x -> x.name = 'sugars'), 1)."100g"  AS sugars
+
+-- In aggregation
+ROUND(AVG(list_extract(list_filter(nutriments, x -> x.name = 'sugars'), 1)."100g"), 1)
+```
+
 Or with the helper: `off.nutriments(country, category)`
 
-| Field | Description |
+| Nutrient name (`.name` field) | Description |
 |---|---|
-| `energy-kcal_100g` | Energy in kcal per 100g |
-| `fat_100g` | Total fat |
-| `saturated-fat_100g` | Saturated fat |
-| `carbohydrates_100g` | Total carbohydrates |
-| `sugars_100g` | Sugars |
-| `fiber_100g` | Dietary fibre |
-| `proteins_100g` | Proteins |
-| `salt_100g` | Salt |
+| `energy-kcal` | Energy in kcal per 100g |
+| `fat` | Total fat |
+| `saturated-fat` | Saturated fat |
+| `carbohydrates` | Total carbohydrates |
+| `sugars` | Sugars |
+| `fiber` | Dietary fibre |
+| `proteins` | Proteins |
+| `salt` | Salt |
+| `sodium` | Sodium |
 
 ### Ingredients & additives
 | Column | Type | Description |

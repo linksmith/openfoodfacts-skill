@@ -127,7 +127,10 @@ def _slug(text: str) -> str:
 
 def _like_pattern(brand: str) -> str:
     """Build a SQL LIKE pattern that handles apostrophes and common variants."""
-    base = re.sub(r"[''`']", "", brand.lower())   # strip apostrophes
+    base = brand.lower()
+    # Replace apostrophes with SQL single-char wildcard _ so "Kellogg's" → "kellogg_s"
+    # and still matches the stored "kellogg's" via the _ wildcard
+    base = re.sub(r"[''`']", "_", base)
     base = re.sub(r"\s+", "%", base.strip())       # spaces → wildcards
     return f"%{base}%"
 
@@ -184,8 +187,8 @@ def _collect_data(off: OFFParquet, brand: str) -> dict:
 
     # ── 3. Countries ─────────────────────────────────────────────────────
     countries_rows = off.con.execute(f"""
-        SELECT UNNEST(countries_tags) AS c, COUNT(*) AS n
-        FROM food
+        SELECT c, COUNT(*) AS n
+        FROM food, UNNEST(countries_tags) AS t(c)
         WHERE {like_clause} AND countries_tags IS NOT NULL
         GROUP BY c ORDER BY n DESC LIMIT 15
     """).fetchall()
@@ -197,8 +200,8 @@ def _collect_data(off: OFFParquet, brand: str) -> dict:
 
     # ── 4. Top categories ─────────────────────────────────────────────────
     cat_rows = off.con.execute(f"""
-        SELECT UNNEST(categories_tags) AS c, COUNT(*) AS n
-        FROM food
+        SELECT c, COUNT(*) AS n
+        FROM food, UNNEST(categories_tags) AS t(c)
         WHERE {like_clause} AND categories_tags IS NOT NULL
         GROUP BY c
         HAVING c LIKE 'en:%' AND n >= 2
@@ -211,15 +214,16 @@ def _collect_data(off: OFFParquet, brand: str) -> dict:
     top_category_tag = cat_rows[0][0] if cat_rows else None
 
     # ── 5. Average nutrition (brand) ──────────────────────────────────────
+    # nutriments is STRUCT(name, 100g, ...)[] — extract by name field
     nutr_row = off.con.execute(f"""
         SELECT
-            ROUND(AVG(TRY_CAST(nutriments['sugars_100g'] AS FLOAT)), 1)        AS sugars,
-            ROUND(AVG(TRY_CAST(nutriments['fat_100g'] AS FLOAT)), 1)           AS fat,
-            ROUND(AVG(TRY_CAST(nutriments['saturated-fat_100g'] AS FLOAT)), 1) AS sat_fat,
-            ROUND(AVG(TRY_CAST(nutriments['salt_100g'] AS FLOAT)), 1)          AS salt,
-            ROUND(AVG(TRY_CAST(nutriments['proteins_100g'] AS FLOAT)), 1)      AS proteins,
-            ROUND(AVG(TRY_CAST(nutriments['energy-kcal_100g'] AS FLOAT)), 0)   AS kcal,
-            COUNT(*) FILTER (WHERE nutriments IS NOT NULL)                     AS n_with_nutr
+            ROUND(AVG(list_extract(list_filter(nutriments, x -> x.name = 'sugars'), 1)."100g"), 1)        AS sugars,
+            ROUND(AVG(list_extract(list_filter(nutriments, x -> x.name = 'fat'), 1)."100g"), 1)           AS fat,
+            ROUND(AVG(list_extract(list_filter(nutriments, x -> x.name = 'saturated-fat'), 1)."100g"), 1) AS sat_fat,
+            ROUND(AVG(list_extract(list_filter(nutriments, x -> x.name = 'salt'), 1)."100g"), 1)          AS salt,
+            ROUND(AVG(list_extract(list_filter(nutriments, x -> x.name = 'proteins'), 1)."100g"), 1)      AS proteins,
+            ROUND(AVG(list_extract(list_filter(nutriments, x -> x.name = 'energy-kcal'), 1)."100g"), 0)   AS kcal,
+            COUNT(*) FILTER (WHERE nutriments IS NOT NULL AND len(nutriments) > 0) AS n_with_nutr
         FROM food
         WHERE {like_clause}
     """).fetchone()
@@ -240,14 +244,14 @@ def _collect_data(off: OFFParquet, brand: str) -> dict:
     if top_category_tag:
         cat_row = off.con.execute(f"""
             SELECT
-                ROUND(AVG(TRY_CAST(nutriments['sugars_100g'] AS FLOAT)), 1)        AS sugars,
-                ROUND(AVG(TRY_CAST(nutriments['fat_100g'] AS FLOAT)), 1)           AS fat,
-                ROUND(AVG(TRY_CAST(nutriments['saturated-fat_100g'] AS FLOAT)), 1) AS sat_fat,
-                ROUND(AVG(TRY_CAST(nutriments['salt_100g'] AS FLOAT)), 1)          AS salt,
-                ROUND(AVG(TRY_CAST(nutriments['proteins_100g'] AS FLOAT)), 1)      AS proteins
+                ROUND(AVG(list_extract(list_filter(nutriments, x -> x.name = 'sugars'), 1)."100g"), 1)        AS sugars,
+                ROUND(AVG(list_extract(list_filter(nutriments, x -> x.name = 'fat'), 1)."100g"), 1)           AS fat,
+                ROUND(AVG(list_extract(list_filter(nutriments, x -> x.name = 'saturated-fat'), 1)."100g"), 1) AS sat_fat,
+                ROUND(AVG(list_extract(list_filter(nutriments, x -> x.name = 'salt'), 1)."100g"), 1)          AS salt,
+                ROUND(AVG(list_extract(list_filter(nutriments, x -> x.name = 'proteins'), 1)."100g"), 1)      AS proteins
             FROM food
             WHERE list_contains(categories_tags, '{top_category_tag}')
-              AND nutriments IS NOT NULL
+              AND nutriments IS NOT NULL AND len(nutriments) > 0
               AND NOT ({like_clause})
         """).fetchone()
         if cat_row and cat_row[0] is not None:
@@ -263,8 +267,8 @@ def _collect_data(off: OFFParquet, brand: str) -> dict:
 
     # ── 7. Top additives ──────────────────────────────────────────────────
     add_rows = off.con.execute(f"""
-        SELECT UNNEST(additives_tags) AS a, COUNT(DISTINCT code) AS n
-        FROM food
+        SELECT a, COUNT(DISTINCT code) AS n
+        FROM food, UNNEST(additives_tags) AS t(a)
         WHERE {like_clause} AND additives_tags IS NOT NULL
         GROUP BY a ORDER BY n DESC LIMIT 20
     """).fetchall()
@@ -290,15 +294,15 @@ def _collect_data(off: OFFParquet, brand: str) -> dict:
             brands,
             LOWER(nutriscore_grade) AS grade,
             nova_group,
-            TRY_CAST(nutriments['sugars_100g'] AS FLOAT) AS sugars,
-            TRY_CAST(nutriments['salt_100g'] AS FLOAT)   AS salt,
-            TRY_CAST(nutriments['fat_100g'] AS FLOAT)    AS fat
+            list_extract(list_filter(nutriments, x -> x.name = 'sugars'), 1)."100g" AS sugars,
+            list_extract(list_filter(nutriments, x -> x.name = 'salt'), 1)."100g"   AS salt,
+            list_extract(list_filter(nutriments, x -> x.name = 'fat'), 1)."100g"    AS fat
         FROM food
         WHERE {like_clause}
           AND LOWER(nutriscore_grade) IN ('a', 'b')
           AND len(product_name) > 0
         ORDER BY grade ASC,
-                 TRY_CAST(nutriments['sugars_100g'] AS FLOAT) ASC NULLS LAST
+                 list_extract(list_filter(nutriments, x -> x.name = 'sugars'), 1)."100g" ASC NULLS LAST
         LIMIT 8
     """).fetchall()
     best_products = [
@@ -317,15 +321,15 @@ def _collect_data(off: OFFParquet, brand: str) -> dict:
             brands,
             LOWER(nutriscore_grade) AS grade,
             nova_group,
-            TRY_CAST(nutriments['sugars_100g'] AS FLOAT) AS sugars,
-            TRY_CAST(nutriments['salt_100g'] AS FLOAT)   AS salt,
-            TRY_CAST(nutriments['fat_100g'] AS FLOAT)    AS fat
+            list_extract(list_filter(nutriments, x -> x.name = 'sugars'), 1)."100g" AS sugars,
+            list_extract(list_filter(nutriments, x -> x.name = 'salt'), 1)."100g"   AS salt,
+            list_extract(list_filter(nutriments, x -> x.name = 'fat'), 1)."100g"    AS fat
         FROM food
         WHERE {like_clause}
           AND LOWER(nutriscore_grade) IN ('d', 'e')
           AND len(product_name) > 0
         ORDER BY grade DESC,
-                 TRY_CAST(nutriments['sugars_100g'] AS FLOAT) DESC NULLS LAST
+                 list_extract(list_filter(nutriments, x -> x.name = 'sugars'), 1)."100g" DESC NULLS LAST
         LIMIT 8
     """).fetchall()
     worst_products = [
