@@ -55,6 +55,110 @@ EU_FOCUS_COUNTRIES = [
     "en:sweden", "en:denmark", "en:austria", "en:switzerland",
 ]
 
+# ---------------------------------------------------------------------------
+# Country-split parquet files
+# ---------------------------------------------------------------------------
+# The full food.parquet (7.5 GB) is split into smaller per-country files
+# and hosted on Hetzner Object Storage. Use a country-specific file when:
+#   - Workshop focus is on one or a few countries (faster, less RAM pressure)
+#   - You want to compare countries without loading the full global dataset
+#
+# Retrieve files from S3 or the VM data directory: ~/data/openfoodfacts/
+# S3 base URL: {OFF_S3_ENDPOINT}/{OFF_S3_BUCKET}/  (set in .env / cloud-config)
+#
+# Files available:
+#   food_eu_all.parquet          — All EU-27 countries combined (deduped)
+#   food_us.parquet              — United States
+#   food_<slug>.parquet          — Per-country (EU + non-EU Europe)
+#   manifest.json                — Row counts, sizes, generated timestamp
+#
+# Example usage:
+#   off_fr = OFFParquet("data/food_france.parquet")
+#   off_eu = OFFParquet("data/food_eu_all.parquet")
+#   off_uk = OFFParquet("data/food_united-kingdom.parquet")
+
+# Row count threshold below which a country file is considered low-data.
+# When analysis is requested for a low-data country, warn the user that
+# results may not be representative.
+LOW_DATA_THRESHOLD = 5_000
+
+# All country-specific files keyed by slug (OFF tag without "en:" prefix).
+# Values are the filename relative to the data directory.
+# This mirrors the output of scripts/split_parquet.py.
+COUNTRY_FILES: dict[str, str] = {
+    # EU combined
+    "eu_all": "food_eu_all.parquet",
+    # US
+    "united-states": "food_us.parquet",
+    # EU-27
+    "austria":          "food_austria.parquet",
+    "belgium":          "food_belgium.parquet",
+    "bulgaria":         "food_bulgaria.parquet",
+    "croatia":          "food_croatia.parquet",
+    "cyprus":           "food_cyprus.parquet",
+    "czech-republic":   "food_czech-republic.parquet",
+    "denmark":          "food_denmark.parquet",
+    "estonia":          "food_estonia.parquet",
+    "finland":          "food_finland.parquet",
+    "france":           "food_france.parquet",
+    "germany":          "food_germany.parquet",
+    "greece":           "food_greece.parquet",
+    "hungary":          "food_hungary.parquet",
+    "ireland":          "food_ireland.parquet",
+    "italy":            "food_italy.parquet",
+    "latvia":           "food_latvia.parquet",
+    "lithuania":        "food_lithuania.parquet",
+    "luxembourg":       "food_luxembourg.parquet",
+    "malta":            "food_malta.parquet",
+    "netherlands":      "food_netherlands.parquet",
+    "poland":           "food_poland.parquet",
+    "portugal":         "food_portugal.parquet",
+    "romania":          "food_romania.parquet",
+    "slovakia":         "food_slovakia.parquet",
+    "slovenia":         "food_slovenia.parquet",
+    "spain":            "food_spain.parquet",
+    "sweden":           "food_sweden.parquet",
+    # Non-EU Europe
+    "albania":                "food_albania.parquet",
+    "andorra":                "food_andorra.parquet",
+    "armenia":                "food_armenia.parquet",
+    "azerbaijan":             "food_azerbaijan.parquet",
+    "belarus":                "food_belarus.parquet",
+    "bosnia-and-herzegovina": "food_bosnia-and-herzegovina.parquet",
+    "georgia":                "food_georgia.parquet",
+    "iceland":                "food_iceland.parquet",
+    "kosovo":                 "food_kosovo.parquet",
+    "liechtenstein":          "food_liechtenstein.parquet",
+    "moldova":                "food_moldova.parquet",
+    "monaco":                 "food_monaco.parquet",
+    "montenegro":             "food_montenegro.parquet",
+    "north-macedonia":        "food_north-macedonia.parquet",
+    "norway":                 "food_norway.parquet",
+    "russia":                 "food_russia.parquet",
+    "san-marino":             "food_san-marino.parquet",
+    "serbia":                 "food_serbia.parquet",
+    "switzerland":            "food_switzerland.parquet",
+    "turkey":                 "food_turkey.parquet",
+    "ukraine":                "food_ukraine.parquet",
+    "united-kingdom":         "food_united-kingdom.parquet",
+    "vatican-city":           "food_vatican-city.parquet",
+}
+
+
+def load_manifest(data_dir: str = DEFAULT_DATA_DIR) -> dict:
+    """Load manifest.json from the split data directory, if present.
+
+    Returns a dict keyed by country slug with keys: rows, size_bytes, file.
+    Returns an empty dict if manifest.json is not found.
+    """
+    import json
+    p = Path(data_dir) / "manifest.json"
+    if p.exists():
+        data = json.loads(p.read_text())
+        return data.get("files", {})
+    return {}
+
+
 # Additives of journalistic interest (EU-relevant controversies)
 ADDITIVES_OF_CONCERN = {
     "en:e171": "Titanium dioxide (banned EU 2022)",
@@ -326,6 +430,56 @@ class OFFParquet:
         print(f"  Date range:       {row['oldest_product']} → {row['newest_product']}")
         print(f"\n  {ATTRIBUTION}")
         return summary
+
+    def warn_if_thin(
+        self,
+        country_slug: str,
+        data_dir: str = DEFAULT_DATA_DIR,
+        *,
+        threshold: int = LOW_DATA_THRESHOLD,
+    ) -> bool:
+        """Check if a country file has low data coverage and warn the user.
+
+        Use this before running analysis on a country-specific parquet file
+        to alert users when results may not be representative.
+
+        Args:
+            country_slug: Country slug as used in COUNTRY_FILES
+                          (e.g. "malta", "luxembourg", "kosovo")
+            data_dir: Directory where manifest.json lives. Default: "data"
+            threshold: Minimum rows to be considered well-covered. Default: 5,000
+
+        Returns:
+            True if the country has low data (warning issued), False otherwise.
+        """
+        manifest = load_manifest(data_dir)
+        entry = manifest.get(country_slug)
+        if entry is None:
+            # No manifest — query the file directly
+            try:
+                rows = self.con.execute("SELECT COUNT(*) FROM food").fetchone()[0]
+            except Exception:
+                return False
+            if rows < threshold:
+                print(
+                    f"⚠ WARNING: This file contains only {rows:,} products for "
+                    f"'{country_slug}'. Results may not be statistically representative. "
+                    f"Consider using food_eu_all.parquet or food.parquet for broader analysis."
+                )
+                return True
+            return False
+
+        rows = entry.get("rows", 0)
+        if rows < threshold:
+            size_mb = entry.get("size_bytes", 0) / 1e6
+            print(
+                f"⚠ WARNING: '{country_slug}' has only {rows:,} products in Open Food Facts "
+                f"(file: {entry.get('file', '?')}, {size_mb:.1f} MB). "
+                f"Results may not be statistically representative. "
+                f"Flag this caveat clearly in any published analysis."
+            )
+            return True
+        return False
 
     def country_coverage(self, top_n: int = 20) -> pd.DataFrame:
         """Return product counts for the top countries.

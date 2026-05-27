@@ -46,6 +46,133 @@ df = off.top_additives(country="en:netherlands", category="en:breakfast-cereals"
 
 ---
 
+## Available country-split data files
+
+In addition to the full `food.parquet`, the dataset is split into smaller
+per-country files hosted on Hetzner Object Storage and available locally
+on workshop VMs at `~/data/openfoodfacts/`.
+
+Use a country-specific file when the workshop focuses on a single country
+or a small set of countries — queries run faster and require less RAM.
+
+**Always check data density before running analysis.** Countries with
+fewer than 5,000 products have limited Open Food Facts coverage; results
+may not be statistically representative. Flag this in any published output.
+
+### File registry
+
+> Row counts below are populated after running `scripts/split_parquet.py`.
+> Until then, use `off.info()` on each file to check coverage.
+> The `manifest.json` file in the same directory has exact counts and sizes.
+
+| File | Region | Label | Rows (approx.) | Notes |
+|------|--------|-------|----------------|-------|
+| `food.parquet` | Global | Full dataset | ~4.5M | All countries |
+| `food_eu_all.parquet` | EU combined | EU-27 combined | ~3–4M | Deduped union of all EU countries |
+| `food_us.parquet` | Americas | United States | ~200K | |
+| `food_france.parquet` | EU | France | ~1.5–2M | Largest OFF dataset |
+| `food_germany.parquet` | EU | Germany | ~200–400K | |
+| `food_united-kingdom.parquet` | Non-EU Europe | United Kingdom | ~150–300K | |
+| `food_spain.parquet` | EU | Spain | ~100–200K | |
+| `food_italy.parquet` | EU | Italy | ~100–200K | |
+| `food_netherlands.parquet` | EU | Netherlands | ~80–150K | |
+| `food_belgium.parquet` | EU | Belgium | ~60–120K | |
+| `food_switzerland.parquet` | Non-EU Europe | Switzerland | ~50–100K | |
+| `food_sweden.parquet` | EU | Sweden | ~30–80K | |
+| `food_austria.parquet` | EU | Austria | ~30–60K | |
+| `food_poland.parquet` | EU | Poland | ~30–60K | |
+| `food_denmark.parquet` | EU | Denmark | ~20–50K | |
+| `food_portugal.parquet` | EU | Portugal | ~20–50K | |
+| `food_norway.parquet` | Non-EU Europe | Norway | ~15–40K | |
+| `food_czech-republic.parquet` | EU | Czech Republic | ~15–30K | |
+| `food_greece.parquet` | EU | Greece | ~10–25K | |
+| `food_romania.parquet` | EU | Romania | ~10–20K | |
+| `food_hungary.parquet` | EU | Hungary | ~10–20K | |
+| `food_ireland.parquet` | EU | Ireland | ~8–20K | |
+| `food_turkey.parquet` | Non-EU Europe | Turkey | ~8–15K | |
+| `food_finland.parquet` | EU | Finland | ~8–15K | |
+| `food_russia.parquet` | Non-EU Europe | Russia | ~5–10K | |
+| `food_ukraine.parquet` | Non-EU Europe | Ukraine | ~5–10K | |
+| `food_slovakia.parquet` | EU | Slovakia | ~5–10K | |
+| `food_croatia.parquet` | EU | Croatia | ~5–10K | |
+| `food_bulgaria.parquet` | EU | Bulgaria | ~5–10K | |
+| `food_serbia.parquet` | Non-EU Europe | Serbia | ~3–8K | ⚠ may be sparse |
+| `food_slovenia.parquet` | EU | Slovenia | ~3–8K | ⚠ may be sparse |
+| `food_lithuania.parquet` | EU | Lithuania | ~3–8K | ⚠ may be sparse |
+| `food_latvia.parquet` | EU | Latvia | ~2–6K | ⚠ sparse |
+| `food_estonia.parquet` | EU | Estonia | ~2–5K | ⚠ sparse |
+| `food_belarus.parquet` | Non-EU Europe | Belarus | ~2–5K | ⚠ sparse |
+| `food_iceland.parquet` | Non-EU Europe | Iceland | ~1–4K | ⚠ sparse |
+| `food_luxembourg.parquet` | EU | Luxembourg | ~1–4K | ⚠ sparse |
+| `food_cyprus.parquet` | EU | Cyprus | ~1–3K | ⚠ sparse |
+| `food_malta.parquet` | EU | Malta | ~500–2K | ⚠ very sparse |
+| `food_albania.parquet` | Non-EU Europe | Albania | <1K | ⚠ very sparse |
+| `food_moldova.parquet` | Non-EU Europe | Moldova | <1K | ⚠ very sparse |
+| `food_north-macedonia.parquet` | Non-EU Europe | North Macedonia | <1K | ⚠ very sparse |
+| `food_bosnia-and-herzegovina.parquet` | Non-EU Europe | Bosnia and Herzegovina | <1K | ⚠ very sparse |
+| `food_liechtenstein.parquet` | Non-EU Europe | Liechtenstein | <500 | ⚠ very sparse |
+| `food_andorra.parquet` | Non-EU Europe | Andorra | <500 | ⚠ very sparse |
+| `food_monaco.parquet` | Non-EU Europe | Monaco | <500 | ⚠ very sparse |
+| `food_san-marino.parquet` | Non-EU Europe | San Marino | <100 | ⚠ nearly empty |
+| `food_montenegro.parquet` | Non-EU Europe | Montenegro | <100 | ⚠ nearly empty |
+| `food_kosovo.parquet` | Non-EU Europe | Kosovo | <100 | ⚠ nearly empty |
+| `food_armenia.parquet` | Non-EU Europe | Armenia | <100 | ⚠ nearly empty |
+| `food_azerbaijan.parquet` | Non-EU Europe | Azerbaijan | <100 | ⚠ nearly empty |
+| `food_georgia.parquet` | Non-EU Europe | Georgia | <100 | ⚠ nearly empty |
+| `food_vatican-city.parquet` | Non-EU Europe | Vatican City | ~0 | ⚠ no data |
+
+### Using country-specific files
+
+```python
+from off_parquet import OFFParquet, COUNTRY_FILES, load_manifest
+
+# Load a country file directly
+off_fr = OFFParquet("data/food_france.parquet")
+
+# Check available files and their row counts
+manifest = load_manifest("data")  # reads data/manifest.json
+for slug, info in manifest.items():
+    print(f"{slug}: {info['rows']:,} rows  ({info['size_bytes']/1e6:.1f} MB)")
+
+# Warn if data coverage is low (< 5,000 rows)
+off_mt = OFFParquet("data/food_malta.parquet")
+off_mt.warn_if_thin("malta", "data")
+# ⚠ WARNING: 'malta' has only 847 products in Open Food Facts ...
+
+# Look up a file path by country slug
+france_file = COUNTRY_FILES["france"]   # → "food_france.parquet"
+uk_file     = COUNTRY_FILES["united-kingdom"]  # → "food_united-kingdom.parquet"
+eu_file     = COUNTRY_FILES["eu_all"]   # → "food_eu_all.parquet"
+```
+
+### Low-data guideline
+
+**Before running any country-specific analysis:**
+1. Check the row count in the manifest table above
+2. If rows < 5,000: tell the user the count and explain that results may not be representative
+3. Suggest `food_eu_all.parquet` or `food.parquet` for cross-EU context
+4. Always include the row count as a caveat in the output
+
+### S3 public download URLs
+
+Files are publicly readable (no authentication required):
+
+```
+{OFF_S3_ENDPOINT}/{OFF_S3_BUCKET}/food_france.parquet
+{OFF_S3_ENDPOINT}/{OFF_S3_BUCKET}/food_eu_all.parquet
+{OFF_S3_ENDPOINT}/{OFF_S3_BUCKET}/manifest.json
+```
+
+Example (with default bucket):
+```
+https://nbg1.your-objectstorage.com/openfoodfacts-dataharvest-2026/food_france.parquet
+```
+
+The `OFF_S3_ENDPOINT` and `OFF_S3_BUCKET` environment variables are set
+on workshop VMs via cloud-config and available in `~/.config/dev/env.sh`.
+
+---
+
 ## 🎯 Showcase trigger — fast-track brand analysis
 
 **Trigger pattern:** any prompt containing `showcase` + a food brand name,
