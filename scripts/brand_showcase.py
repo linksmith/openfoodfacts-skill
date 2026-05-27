@@ -280,9 +280,13 @@ def _collect_data(off: OFFParquet, brand: str) -> dict:
     ]
 
     # ── 8. Best products (Nutri-Score A/B) ────────────────────────────────
+    # product_name is STRUCT(lang, text)[] — extract readable text
     best_rows = off.con.execute(f"""
         SELECT
-            product_name,
+            COALESCE(
+                array_to_string(list_transform(product_name, x -> x."text"), ' / '),
+                brands, '?'
+            ) AS pname,
             brands,
             LOWER(nutriscore_grade) AS grade,
             nova_group,
@@ -292,7 +296,7 @@ def _collect_data(off: OFFParquet, brand: str) -> dict:
         FROM food
         WHERE {like_clause}
           AND LOWER(nutriscore_grade) IN ('a', 'b')
-          AND product_name IS NOT NULL AND product_name != ''
+          AND len(product_name) > 0
         ORDER BY grade ASC,
                  TRY_CAST(nutriments['sugars_100g'] AS FLOAT) ASC NULLS LAST
         LIMIT 8
@@ -306,7 +310,10 @@ def _collect_data(off: OFFParquet, brand: str) -> dict:
     # ── 9. Worst products (Nutri-Score D/E) ───────────────────────────────
     worst_rows = off.con.execute(f"""
         SELECT
-            product_name,
+            COALESCE(
+                array_to_string(list_transform(product_name, x -> x."text"), ' / '),
+                brands, '?'
+            ) AS pname,
             brands,
             LOWER(nutriscore_grade) AS grade,
             nova_group,
@@ -316,7 +323,7 @@ def _collect_data(off: OFFParquet, brand: str) -> dict:
         FROM food
         WHERE {like_clause}
           AND LOWER(nutriscore_grade) IN ('d', 'e')
-          AND product_name IS NOT NULL AND product_name != ''
+          AND len(product_name) > 0
         ORDER BY grade DESC,
                  TRY_CAST(nutriments['sugars_100g'] AS FLOAT) DESC NULLS LAST
         LIMIT 8

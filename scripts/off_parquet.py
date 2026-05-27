@@ -68,7 +68,7 @@ EU_FOCUS_COUNTRIES = [
 #
 # Files available:
 #   food_eu_all.parquet          — All EU-27 countries combined (deduped)
-#   food_us.parquet              — United States
+#   food_united-states.parquet   — United States
 #   food_<slug>.parquet          — Per-country (EU + non-EU Europe)
 #   manifest.json                — Row counts, sizes, generated timestamp
 #
@@ -89,7 +89,7 @@ COUNTRY_FILES: dict[str, str] = {
     # EU combined
     "eu_all": "food_eu_all.parquet",
     # US
-    "united-states": "food_us.parquet",
+    "united-states": "food_united-states.parquet",
     # EU-27
     "austria":          "food_austria.parquet",
     "belgium":          "food_belgium.parquet",
@@ -410,7 +410,7 @@ class OFFParquet:
                 COUNT(*)                                           AS total_products,
                 COUNT(*) FILTER (WHERE nutriscore_grade IS NOT NULL) AS has_nutriscore,
                 COUNT(*) FILTER (WHERE nova_group IS NOT NULL)     AS has_nova_group,
-                COUNT(*) FILTER (WHERE ecoscore_grade IS NOT NULL) AS has_ecoscore,
+                COUNT(*) FILTER (WHERE environmental_score_grade IS NOT NULL) AS has_ecoscore,
                 COUNT(DISTINCT brands)                             AS distinct_brands,
                 COUNT(DISTINCT lang)                               AS distinct_languages,
                 MIN(to_timestamp(created_t))::DATE                AS oldest_product,
@@ -1037,18 +1037,24 @@ class OFFParquet:
             limit: Max results.
         """
         filters = self._build_filters(country, category)
-        where = f"WHERE LOWER(product_name) LIKE '%{query.lower()}%'"
+        # product_name is STRUCT(lang, text)[] — search across all language variants
+        q = query.lower().replace("'", "''")
+        where = (
+            f"WHERE lower(array_to_string(list_transform(product_name, x -> x.\"text\"), ' '))"
+            f" LIKE '%{q}%'"
+        )
         if filters:
             where += f" AND {filters}"
 
         return self.query(f"""
             SELECT
                 code,
-                product_name,
+                array_to_string(list_transform(product_name, x -> x."text"), ' / ')
+                    AS product_name,
                 brands,
                 nutriscore_grade,
                 nova_group,
-                ecoscore_grade,
+                environmental_score_grade AS ecoscore_grade,
                 countries_tags,
                 categories_tags
             FROM food
