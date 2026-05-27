@@ -15,45 +15,34 @@ DuckDB for sub-second queries.
 4.5 million products, 150 countries, licensed under the Open Database
 License (ODbL). Every output you produce must include attribution.
 
-## Parquet file naming schema
+## Parquet file
 
-All parquet files live in `data/` in the **project root** (not inside the
-skill directory). Pattern: `data/food_{key}.parquet`
+The full Open Food Facts parquet lives in `data/` in the **project root**
+(not inside the skill directory).
 
-| Key | File | Contents | Approx. size |
-|---|---|---|---|
-| `full` | `data/food.parquet` | Full dataset | ~7.5 GB |
-| `eu` | `data/food_eu.parquet` | EU27 + UK combined | ~1.5 GB |
-| `us` | `data/food_us.parquet` | United States | ~0.5 GB |
-| `fr` | `data/food_fr.parquet` | France | ~0.8 GB |
-| `de` | `data/food_de.parquet` | Germany | ~0.3 GB |
-| `gb` | `data/food_gb.parquet` | United Kingdom | ~0.3 GB |
-| `es` | `data/food_es.parquet` | Spain | ~0.2 GB |
-| `it` | `data/food_it.parquet` | Italy | ~0.2 GB |
-| `nl` | `data/food_nl.parquet` | Netherlands | ~0.15 GB |
-| `be` | `data/food_be.parquet` | Belgium | ~0.1 GB |
-| `pl` | `data/food_pl.parquet` | Poland | ~0.1 GB |
-| `se` | `data/food_se.parquet` | Sweden | ~0.1 GB |
-| `dk` | `data/food_dk.parquet` | Denmark | ~0.05 GB |
-| `at` `fi` `pt` `ro` `hu` `cz` `ie` `gr` | `data/food_{key}.parquet` | Mid-size EU countries | ~0.05–0.1 GB |
-| `sk` `hr` `bg` `si` `lt` `lv` `ee` `lu` `cy` `mt` | `data/food_{key}.parquet` | Smaller EU countries | <0.05 GB |
+| File | Contents | Approx. size |
+|---|---|---|
+| `data/food.parquet` | Full dataset (4.5M+ products, 150 countries) | ~7.5 GB |
 
 **Loading data:**
 ```python
 from off_parquet import OFFParquet
 
-off = OFFParquet.from_key("nl")     # Netherlands — recommended for NL stories
-off = OFFParquet.from_key("eu")     # EU combined — for cross-country comparisons
-off = OFFParquet.from_key("fr")     # France — richest OFF dataset
-off = OFFParquet.from_key("full")   # Full dataset — when you need global scope
+off = OFFParquet("data/food.parquet")
+# ✓ Connected: food.parquet
+# ✓ 4,490,000 products · struct nutriments
+# ✓ Data: Open Food Facts (openfoodfacts.org), ODbL v1.0
 ```
 
-**When to use which file:**
-- Start with a country or `eu` subset for speed. Only use `full` if you need
-  global coverage or countries not in the EU set.
-- The `eu` subset is best for cross-country EU investigations.
-- The `full` dataset is needed for: US vs. EU comparisons, products tagged
-  for multiple regions, or global brand analysis.
+**Country filtering is done at query time** using DuckDB's `list_contains`:
+```python
+# All French products
+off.query("SELECT * FROM food WHERE list_contains(countries_tags, 'en:france') LIMIT 10")
+
+# Built-in methods also accept a country filter
+df = off.nova_distribution(country="en:france")
+df = off.top_additives(country="en:netherlands", category="en:breakfast-cereals")
+```
 
 ---
 
@@ -70,10 +59,8 @@ ask clarifying questions** unless the brand name is completely ambiguous:
 
 **1. Extract the brand name** from the prompt.
 
-**2. Choose the parquet file.** Default: `"eu"` (best coverage for European
-journalism). Use `"full"` if the user asks for a global view or mentions
-a US brand like Kellogg's. Respect any explicit key the user provides
-(e.g. "showcase Alpro using Netherlands data" → `"nl"`).
+**2. Choose the parquet file.** Use `data/food.parquet` (the full dataset).
+Filter by country at query time using `list_contains(countries_tags, 'en:france')`.
 
 **3. Run the showcase generator:**
 
@@ -84,7 +71,7 @@ from brand_showcase import generate_brand_showcase
 
 path = generate_brand_showcase(
     brand="[brand name from prompt]",
-    parquet_key="eu",        # or "full", "nl", etc.
+    parquet_path="data/food.parquet",
     output_dir="output",
     open_browser=True,       # opens in browser automatically
 )
@@ -179,34 +166,24 @@ The workshop VMs have `food.parquet` pre-downloaded. Look for it in:
 The `OFFParquet` class auto-detects files in `data/`. If it raises
 `FileNotFoundError`, run the setup script.
 
-**One-command setup (downloads full parquet + builds all subsets):**
+**One-command setup:**
 ```bash
 # Install dependencies
 pip install duckdb pandas requests tqdm
 
-# Download food.parquet and build all EU + US subsets
+# Download food.parquet (~7.5 GB, ~10 min on 100 Mbit)
 python scripts/download_data.py
 ```
 
-**Selective setup:**
+**Check status:**
 ```bash
-# See naming schema
-python scripts/download_data.py --list
-
-# Check what's already downloaded
 python scripts/download_data.py --status
-
-# Build specific subsets only (food.parquet already downloaded)
-python scripts/download_data.py --skip-download --subsets nl fr de eu
-
-# Download only, no subsets
-python scripts/download_data.py --subsets
 ```
 
 **VM provisioning script (run during VM setup, before workshop):**
 ```bash
 pip install duckdb pandas matplotlib plotly requests tqdm
-python scripts/download_data.py   # ~15–30 min total
+python scripts/download_data.py   # ~10 min download
 ```
 
 ### Step 2: Install dependencies
@@ -229,7 +206,7 @@ import sys
 sys.path.insert(0, "/path/to/skill/scripts")  # adjust to actual skill location
 from off_parquet import OFFParquet
 
-off = OFFParquet("food.parquet")
+off = OFFParquet("data/food.parquet")
 # ✓ Connected: food.parquet
 # ✓ 4,490,000 products · struct nutriments
 # ✓ Data: Open Food Facts (openfoodfacts.org), ODbL v1.0

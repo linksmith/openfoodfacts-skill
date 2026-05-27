@@ -19,11 +19,11 @@ Usage:
     # From Python
     from brand_showcase import generate_brand_showcase
     generate_brand_showcase("Kellogg's")
-    generate_brand_showcase("Alpro", parquet_key="nl")
+    generate_brand_showcase("Alpro", parquet_path="data/food.parquet")
 
     # From the command line (project root)
     python scripts/brand_showcase.py "Kellogg's"
-    python scripts/brand_showcase.py "Alpro" --parquet-key eu --no-browser
+    python scripts/brand_showcase.py "Alpro" --no-browser
 """
 
 import json
@@ -38,7 +38,7 @@ from typing import Optional
 SCRIPT_DIR = Path(__file__).parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from off_parquet import OFFParquet, ADDITIVES_OF_CONCERN, DEFAULT_DATA_DIR, SUBSET_FILES
+from off_parquet import OFFParquet, ADDITIVES_OF_CONCERN, DEFAULT_DATA_DIR
 
 # ---------------------------------------------------------------------------
 # E-number lookup (extends the core list with common non-controversial ones)
@@ -857,8 +857,7 @@ if (DATA.nutr.has_compare && document.getElementById('nutrChart')) {{
 
 def generate_brand_showcase(
     brand: str,
-    parquet_key: str = "eu",
-    parquet_path: Optional[str] = None,
+    parquet_path: str = f"{DEFAULT_DATA_DIR}/food.parquet",
     output_dir: str = "output",
     open_browser: bool = True,
     verbose: bool = True,
@@ -866,13 +865,11 @@ def generate_brand_showcase(
     """Generate a self-contained HTML brand showcase page.
 
     Args:
-        brand:       Food brand name (e.g. "Kellogg's", "Alpro", "Danone").
-        parquet_key: Which parquet subset to query. Default "eu" (EU+UK).
-                     Use "full" for global data, "fr" for France-only, etc.
-        parquet_path: Explicit path to parquet file (overrides parquet_key).
-        output_dir:  Directory to save the HTML file. Default: "output/".
+        brand:        Food brand name (e.g. "Kellogg's", "Alpro", "Danone").
+        parquet_path: Path to the parquet file. Default: "data/food.parquet".
+        output_dir:   Directory to save the HTML file. Default: "output/".
         open_browser: Automatically open the page in the default browser.
-        verbose:     Print progress messages.
+        verbose:      Print progress messages.
 
     Returns:
         Path to the generated HTML file.
@@ -883,16 +880,13 @@ def generate_brand_showcase(
 
     Example:
         path = generate_brand_showcase("Kellogg's")
-        path = generate_brand_showcase("Alpro", parquet_key="nl")
-        path = generate_brand_showcase("Nestlé", parquet_key="full", open_browser=False)
+        path = generate_brand_showcase("Alpro", parquet_path="data/food.parquet")
+        path = generate_brand_showcase("Nestlé", open_browser=False)
     """
     if verbose:
         print(f"🔍  Loading data for '{brand}'...")
 
-    if parquet_path:
-        off = OFFParquet(parquet_path, verbose=verbose)
-    else:
-        off = OFFParquet.from_key(parquet_key, verbose=verbose)
+    off = OFFParquet(parquet_path, verbose=verbose)
 
     if verbose:
         print(f"📊  Running brand analysis queries...")
@@ -936,18 +930,14 @@ if __name__ == "__main__":
         epilog="""
 Examples:
   python scripts/brand_showcase.py "Kellogg's"
-  python scripts/brand_showcase.py "Alpro" --parquet-key nl
-  python scripts/brand_showcase.py "Nestlé" --parquet-key full --no-browser
+  python scripts/brand_showcase.py "Nestlé" --no-browser
   python scripts/brand_showcase.py "Danone" --output-dir reports/
+  python scripts/brand_showcase.py "Alpro" --parquet-path ~/data/openfoodfacts/food.parquet
         """,
     )
     parser.add_argument("brand", help="Brand name (e.g. \"Kellogg's\", \"Alpro\")")
-    parser.add_argument(
-        "--parquet-key", "-k", default="eu",
-        help=f"Parquet subset key. Valid: {', '.join(sorted(SUBSET_FILES))}. Default: eu",
-    )
-    parser.add_argument("--parquet-path", "-p", default=None,
-                        help="Explicit path to parquet file (overrides --parquet-key)")
+    parser.add_argument("--parquet-path", "-p", default=f"{DEFAULT_DATA_DIR}/food.parquet",
+                        help="Path to parquet file. Default: data/food.parquet")
     parser.add_argument("--output-dir", "-o", default="output",
                         help="Output directory. Default: output/")
     parser.add_argument("--no-browser", action="store_true",
@@ -958,7 +948,6 @@ Examples:
     try:
         path = generate_brand_showcase(
             brand=args.brand,
-            parquet_key=args.parquet_key,
             parquet_path=args.parquet_path,
             output_dir=args.output_dir,
             open_browser=not args.no_browser,

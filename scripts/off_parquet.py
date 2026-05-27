@@ -16,10 +16,10 @@ Install: pip install duckdb pandas requests tqdm
 Usage:
     from off_parquet import OFFParquet
 
-    off = OFFParquet("food.parquet")         # path to local parquet file
+    off = OFFParquet("data/food.parquet")    # path to local parquet file
     off.info()                               # quick dataset summary
-    df = off.nova_distribution(country="france")
-    df = off.top_additives(category="breakfast-cereals")
+    df = off.nova_distribution(country="en:france")
+    df = off.top_additives(category="en:breakfast-cereals")
     df = off.query("SELECT brand, COUNT(*) FROM food GROUP BY 1 ORDER BY 2 DESC")
 """
 
@@ -45,123 +45,8 @@ PARQUET_URL = (
     "/resolve/main/food.parquet?download=true"
 )
 
-# ---------------------------------------------------------------------------
-# Naming schema
-#
-# All parquet files live in data/ relative to the project root.
-# Pattern: data/food_{key}.parquet
-#
-#   data/food.parquet        — full dataset (~7.5 GB)
-#   data/food_eu.parquet     — EU27 + UK combined
-#   data/food_us.parquet     — United States
-#   data/food_fr.parquet     — France
-#   data/food_de.parquet     — Germany
-#   data/food_nl.parquet     — Netherlands
-#   data/food_es.parquet     — Spain
-#   data/food_it.parquet     — Italy
-#   data/food_be.parquet     — Belgium
-#   data/food_pl.parquet     — Poland
-#   data/food_se.parquet     — Sweden
-#   data/food_dk.parquet     — Denmark
-# ---------------------------------------------------------------------------
-
-# Maps short key → filename (relative to data/)
-# Keys follow ISO 3166-1 alpha-2 codes for individual countries.
-# Regional keys: "eu" (EU27+UK), "us" (United States)
-SUBSET_FILES: dict[str, str] = {
-    # Regional
-    "full": "food.parquet",
-    "eu":   "food_eu.parquet",
-    "us":   "food_us.parquet",
-    # EU27 individual countries
-    "at":   "food_at.parquet",   # Austria
-    "be":   "food_be.parquet",   # Belgium
-    "bg":   "food_bg.parquet",   # Bulgaria
-    "hr":   "food_hr.parquet",   # Croatia
-    "cy":   "food_cy.parquet",   # Cyprus
-    "cz":   "food_cz.parquet",   # Czechia
-    "dk":   "food_dk.parquet",   # Denmark
-    "ee":   "food_ee.parquet",   # Estonia
-    "fi":   "food_fi.parquet",   # Finland
-    "fr":   "food_fr.parquet",   # France
-    "de":   "food_de.parquet",   # Germany
-    "gr":   "food_gr.parquet",   # Greece
-    "hu":   "food_hu.parquet",   # Hungary
-    "ie":   "food_ie.parquet",   # Ireland
-    "it":   "food_it.parquet",   # Italy
-    "lv":   "food_lv.parquet",   # Latvia
-    "lt":   "food_lt.parquet",   # Lithuania
-    "lu":   "food_lu.parquet",   # Luxembourg
-    "mt":   "food_mt.parquet",   # Malta
-    "nl":   "food_nl.parquet",   # Netherlands
-    "pl":   "food_pl.parquet",   # Poland
-    "pt":   "food_pt.parquet",   # Portugal
-    "ro":   "food_ro.parquet",   # Romania
-    "sk":   "food_sk.parquet",   # Slovakia
-    "si":   "food_si.parquet",   # Slovenia
-    "es":   "food_es.parquet",   # Spain
-    "se":   "food_se.parquet",   # Sweden
-    # Non-EU but included for European journalism context
-    "gb":   "food_gb.parquet",   # United Kingdom
-}
-
 # Default data directory (relative to project root / working directory)
 DEFAULT_DATA_DIR = "data"
-
-# ---------------------------------------------------------------------------
-# Country tag lists used when building subsets
-# ---------------------------------------------------------------------------
-
-# OFF tags for all 27 EU member states + UK (post-Brexit but journalistically
-# relevant for cross-border food reporting)
-EU_COUNTRY_TAGS: list[str] = [
-    "en:austria", "en:belgium", "en:bulgaria", "en:croatia", "en:cyprus",
-    "en:czechia", "en:denmark", "en:estonia", "en:finland", "en:france",
-    "en:germany", "en:greece", "en:hungary", "en:ireland", "en:italy",
-    "en:latvia", "en:lithuania", "en:luxembourg", "en:malta",
-    "en:netherlands", "en:poland", "en:portugal", "en:romania",
-    "en:slovakia", "en:slovenia", "en:spain", "en:sweden",
-    "en:united-kingdom",   # included for cross-border journalism
-]
-
-US_COUNTRY_TAGS: list[str] = ["en:united-states"]
-
-# Per-country subset definitions: key → list of OFF tags
-SUBSET_COUNTRY_TAGS: dict[str, list[str]] = {
-    # Regional
-    "eu": EU_COUNTRY_TAGS,
-    "us": US_COUNTRY_TAGS,
-    # EU27 individual
-    "at": ["en:austria"],
-    "be": ["en:belgium"],
-    "bg": ["en:bulgaria"],
-    "hr": ["en:croatia"],
-    "cy": ["en:cyprus"],
-    "cz": ["en:czechia"],
-    "dk": ["en:denmark"],
-    "ee": ["en:estonia"],
-    "fi": ["en:finland"],
-    "fr": ["en:france"],
-    "de": ["en:germany"],
-    "gr": ["en:greece"],
-    "hu": ["en:hungary"],
-    "ie": ["en:ireland"],
-    "it": ["en:italy"],
-    "lv": ["en:latvia"],
-    "lt": ["en:lithuania"],
-    "lu": ["en:luxembourg"],
-    "mt": ["en:malta"],
-    "nl": ["en:netherlands"],
-    "pl": ["en:poland"],
-    "pt": ["en:portugal"],
-    "ro": ["en:romania"],
-    "sk": ["en:slovakia"],
-    "si": ["en:slovenia"],
-    "es": ["en:spain"],
-    "se": ["en:sweden"],
-    # Non-EU
-    "gb": ["en:united-kingdom"],
-}
 
 # Standard European countries for cross-country analysis queries
 EU_FOCUS_COUNTRIES = [
@@ -205,37 +90,6 @@ class OFFParquet:
             found. Pass None to skip auto-detection.
         verbose: Print query timings and row counts. Default True.
     """
-
-    @classmethod
-    def from_key(cls, key: str, data_dir: str = DEFAULT_DATA_DIR, verbose: bool = True) -> "OFFParquet":
-        """Create an OFFParquet instance using a short subset key.
-
-        Looks up the filename from SUBSET_FILES and resolves it inside
-        data_dir. This is the recommended way to load subsets — it ensures
-        consistent file naming across the project.
-
-        Args:
-            key: One of the keys in SUBSET_FILES:
-                 "full", "eu", "us", "fr", "de", "nl", "es", "it",
-                 "be", "pl", "se", "dk"
-            data_dir: Directory containing parquet files. Default: "data/"
-            verbose: Print connection info.
-
-        Examples:
-            off = OFFParquet.from_key("nl")      # Netherlands subset
-            off = OFFParquet.from_key("eu")      # EU combined
-            off = OFFParquet.from_key("full")    # Full 7.5 GB dataset
-
-        Raises:
-            KeyError: If key is not in SUBSET_FILES.
-            FileNotFoundError: If the file doesn't exist.
-        """
-        if key not in SUBSET_FILES:
-            valid = ", ".join(sorted(SUBSET_FILES))
-            raise KeyError(f"Unknown key '{key}'. Valid keys: {valid}")
-        filename = SUBSET_FILES[key]
-        path = str(Path(data_dir) / filename)
-        return cls(parquet_path=path, verbose=verbose)
 
     def __init__(
         self,
@@ -318,55 +172,6 @@ class OFFParquet:
         print(f"✓ Saved {size_gb:.2f} GB to {target}")
         return target
 
-    @staticmethod
-    def build_subset(
-        key: str,
-        source_path: str = f"{DEFAULT_DATA_DIR}/food.parquet",
-        data_dir: str = DEFAULT_DATA_DIR,
-    ) -> Path:
-        """Build a named subset parquet from the full dataset.
-
-        Uses the naming schema: data/food_{key}.parquet
-        For multi-country subsets (e.g. "eu"), includes a product if it
-        is tagged for ANY of the relevant countries.
-
-        Args:
-            key: Subset key — one of: eu, us, fr, de, nl, es, it, be, pl, se, dk
-            source_path: Path to the full food.parquet.
-            data_dir: Output directory. Default: "data/"
-
-        Returns:
-            Path to the created subset file.
-
-        Example:
-            OFFParquet.build_subset("nl")          # → data/food_nl.parquet
-            OFFParquet.build_subset("eu")          # → data/food_eu.parquet
-        """
-        if key not in SUBSET_COUNTRY_TAGS:
-            raise KeyError(
-                f"Unknown key '{key}'. Valid: {', '.join(sorted(SUBSET_COUNTRY_TAGS))}"
-            )
-        if key not in SUBSET_FILES:
-            raise KeyError(f"No filename defined for key '{key}'")
-
-        tags = SUBSET_COUNTRY_TAGS[key]
-        out = Path(data_dir) / SUBSET_FILES[key]
-        out.parent.mkdir(parents=True, exist_ok=True)
-
-        # Build a DuckDB array literal for the tag list
-        tags_literal = "[" + ", ".join(f"'{t}'" for t in tags) + "]"
-
-        con = duckdb.connect(":memory:")
-        con.execute(f"""
-            COPY (
-                SELECT * FROM read_parquet('{source_path}')
-                WHERE len(list_intersect(countries_tags, {tags_literal})) > 0
-            ) TO '{out}' (FORMAT PARQUET, COMPRESSION ZSTD)
-        """)
-        size_mb = out.stat().st_size / 1e6
-        print(f"✓ {key:>4}  →  {out}  ({size_mb:.0f} MB)")
-        return out
-
     # ------------------------------------------------------------------
     # Schema inspection
     # ------------------------------------------------------------------
@@ -404,10 +209,8 @@ class OFFParquet:
             f"'{given.name}' not found. Checked:\n"
             + "\n".join(f"  {p.resolve()}" for p in candidates)
             + f"\n\nExpected location: {Path(DEFAULT_DATA_DIR) / given.name}"
-            "\n\nRun the setup script to download and build all subsets:\n"
-            "  python scripts/download_data.py\n\n"
-            "Or use OFFParquet.from_key() with a valid key:\n"
-            f"  Valid keys: {', '.join(sorted(SUBSET_FILES))}"
+            "\n\nRun the setup script to download the parquet:\n"
+            "  python scripts/download_data.py"
         )
 
     def _get_schema(self) -> dict:
