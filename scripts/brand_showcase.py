@@ -840,7 +840,7 @@ if (DATA.nutr.has_compare && document.getElementById('nutrChart')) {{
     data: {{
       labels: DATA.nutr.labels,
       datasets: [
-        {{ label: '{brand}', data: DATA.nutr.brand, backgroundColor: '#0f172a', borderRadius: 3 }},
+        {{ label: {json.dumps(brand)}, data: DATA.nutr.brand, backgroundColor: '#0f172a', borderRadius: 3 }},
         {{ label: DATA.nutr.cat_label, data: DATA.nutr.category, backgroundColor: '#93c5fd', borderRadius: 3 }},
       ]
     }},

@@ -224,6 +224,22 @@ Key findings for [Brand]:
 - The `"full"` parquet if using a subset
 - Suggest similar brand names
 
+### JavaScript safety rule — always use json.dumps for brand names
+
+**Never interpolate brand names (or any user string) directly into a JS string literal:**
+
+```python
+# BROKEN — apostrophes in "Kellogg's", "McDonald's" etc. produce a JS syntax error
+{{ label: '{brand}', ... }}
+
+# CORRECT — json.dumps adds quotes and escapes all special characters
+{{ label: {json.dumps(brand)}, ... }}
+```
+
+This applies to every f-string that injects Python values into `<script>` blocks.
+Use `json.dumps(value)` for any string; use `json.dumps(dict)` for structured data
+(the `DATA = {json.dumps(chart_data)}` pattern already does this for the chart payload).
+
 ### What the showcase generates
 
 The HTML page includes 8 visualisations and tables:
