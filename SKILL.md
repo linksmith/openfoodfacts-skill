@@ -764,3 +764,44 @@ for endpoint details and `scripts/off_client.py` for method documentation.
 **Do not use the API for population-level analysis.** The search endpoint
 returns at most a few hundred products per query and is rate-limited to
 10 calls/minute. Use the parquet instead.
+
+---
+
+## HTML output — design system
+
+All HTML pages this skill produces (brand showcase, custom analysis pages,
+dashboards) must follow the **workshop design system** defined in
+`skills/design/SKILL.md`.
+
+### What the showcase already does
+
+`scripts/brand_showcase.py` is implemented against the design system:
+
+| Design rule | Implementation |
+|---|---|
+| Zinc token palette | `:root` variables (`--bg`, `--fg`, `--border`, …) |
+| Dark mode | `@media (prefers-color-scheme: dark)` token overrides |
+| Google Fonts | Inter + JetBrains Mono loaded from `fonts.googleapis.com` |
+| No box-shadows | Cards use `border: 1px solid var(--border)` only |
+| 4 px radius | `--radius: 4px` throughout |
+| Data tables | `table.data` class (38 px rows, uppercase headers) |
+| KPI tiles | `.stats` + `.stat` grid |
+| Status colours | `.stat-value.ok / .warn / .fail` mapped to NOVA 4 percentage |
+| Mono for data | Product names, E-numbers, country codes in `var(--font-mono)` |
+| NS / NOVA colours | Official palette (design-system exception — established colours) |
+| Chart palette | `#00C853` accent for primary series, `#a1a1aa` for comparisons |
+| Wide layout | 1200 px max-width (dashboard page) |
+
+### Writing custom HTML pages
+
+When writing analysis pages outside the showcase generator, paste the full
+CSS base from `skills/design/SKILL.md` into your `<head>` and use the
+component patterns from that skill. **Do not invent ad-hoc CSS or import
+Bootstrap/Tailwind.**
+
+Quick checklist:
+- [ ] CSS base pasted from `skills/design/SKILL.md`
+- [ ] All colours from tokens — no hex literals outside `:root`
+- [ ] Numbers and machine values in `.mono`
+- [ ] Charts: finding-based title, sample size annotation, ODbL attribution
+- [ ] `body.wide` for dashboards; plain `body` for reports

@@ -387,20 +387,27 @@ def _fmt(val, suffix="", fallback="—") -> str:
 
 def _product_rows_html(products: list[dict]) -> str:
     if not products:
-        return "<tr><td colspan='5' class='empty'>No products with score data</td></tr>"
+        return (
+            "<tr><td colspan='5' "
+            "style='text-align:center;color:var(--fg-muted);font-style:italic;padding:20px 14px'>"
+            "No products with score data"
+            "</td></tr>"
+        )
     rows = []
     for p in products:
         grade = (p.get("grade") or "?").lower()
         nova  = p.get("nova")
         nova_label = NOVA_LABELS.get(nova, "—") if nova else "—"
-        rows.append(f"""
-        <tr>
-          <td class="prod-name">{p['name'] or '—'}</td>
-          <td><span class="ns-badge ns-{grade}">{grade.upper()}</span></td>
-          <td><span class="nova-badge nova-{nova or 0}">{nova or '—'}</span> <small>{nova_label}</small></td>
-          <td class="num">{_fmt(p.get('sugars'), 'g')}</td>
-          <td class="num">{_fmt(p.get('salt'), 'g')}</td>
-        </tr>""")
+        rows.append(
+            f"<tr>"
+            f"<td class='prod-name mono'>{p['name'] or '—'}</td>"
+            f"<td><span class='ns-badge ns-{grade}'>{grade.upper()}</span></td>"
+            f"<td><span class='nova-badge nova-{nova or 0}'>{nova or '—'}</span>"
+            f" <small style='color:var(--fg-muted)'>{nova_label}</small></td>"
+            f"<td class='num'>{_fmt(p.get('sugars'), 'g')}</td>"
+            f"<td class='num'>{_fmt(p.get('salt'), 'g')}</td>"
+            f"</tr>"
+        )
     return "\n".join(rows)
 
 
@@ -432,25 +439,24 @@ def _render_html(data: dict) -> str:
     cat_labels = [c[0] for c in categories]
     cat_values = [c[1] for c in categories]
 
-    # Nutrition comparison bars (only if both brand + category data exist)
     nutr_metrics = ["sugars", "fat", "sat_fat", "salt", "proteins"]
     nutr_labels  = ["Sugars", "Fat", "Sat. fat", "Salt", "Proteins"]
     brand_nutr_vals = [bn.get(m) for m in nutr_metrics]
     cat_nutr_vals   = [cn.get(m) for m in nutr_metrics] if cn else []
     has_nutr_compare = any(v is not None for v in brand_nutr_vals)
 
-    # ── Country pills HTML ────────────────────────────────────────────────
+    # ── Country pills ─────────────────────────────────────────────────────
     country_pills = "".join(
         f'<span class="country-pill">{c[0]} <small>({c[1]})</small></span>'
         for c in countries
     )
 
-    # ── Additive rows HTML ────────────────────────────────────────────────
-    add_rows = ""
+    # ── Additive rows ─────────────────────────────────────────────────────
+    add_rows_html = ""
     for a in additives:
         flag = "⚠️" if a["concerning"] else ""
         cls  = "add-concern" if a["concerning"] else ""
-        add_rows += (
+        add_rows_html += (
             f'<tr class="{cls}">'
             f'<td>{flag} {a["name"]}</td>'
             f'<td class="num">{a["count"]}</td>'
@@ -458,17 +464,58 @@ def _render_html(data: dict) -> str:
             f'</tr>'
         )
 
-    # ── NOVA 4 colour for hero card ───────────────────────────────────────
+    # ── NOVA 4 stat class (design-system semantic colours) ────────────────
     if nova4_pct >= 60:
-        nova4_hero_cls = "hero-danger"
+        nova4_stat_cls = "fail"
     elif nova4_pct >= 35:
-        nova4_hero_cls = "hero-warning"
+        nova4_stat_cls = "warn"
     else:
-        nova4_hero_cls = "hero-ok"
+        nova4_stat_cls = "ok"
 
-    # ── Dominant NS color for hero card ──────────────────────────────────
+    # ── NS hero colour (official NS palette, design-system exception) ─────
     ns_hero_color = NS_COLORS.get(dominant_ns, NS_COLORS["?"])
-    ns_hero_bg    = NS_BG.get(dominant_ns, NS_BG["?"])
+    ns_hero_text  = "color:#333;" if dominant_ns == "c" else ""
+
+    # ── Sugar stat hint ───────────────────────────────────────────────────
+    if cn and cn.get("sugars") is not None:
+        sugar_hint = f"vs. {_fmt(cn.get('sugars'), 'g')} {data['cat_label_short']}"
+    else:
+        sugar_hint = f"from {bn.get('n', 0)} products with nutrition data"
+
+    # ── Nutrition section (chart or table fallback) ───────────────────────
+    if has_nutr_compare:
+        nutr_section = (
+            f'<div class="card">'
+            f'<h3>Nutrition per 100g — {data["cat_label_short"]}</h3>'
+            f'<div class="chart-wrap"><canvas id="nutrChart"></canvas></div>'
+            f'</div>'
+        )
+    else:
+        nutr_rows = "".join(
+            f'<tr><td>{lbl}</td><td class="num">{_fmt(bn.get(m), "g/100g")}</td></tr>'
+            for lbl, m in zip(nutr_labels, nutr_metrics)
+        )
+        nutr_section = (
+            f'<div class="card">'
+            f'<h3>Average nutrition per 100g</h3>'
+            f'<table class="data">'
+            f'<thead><tr><th>Nutrient</th><th class="num">Brand avg.</th></tr></thead>'
+            f'<tbody>{nutr_rows}</tbody>'
+            f'</table>'
+            f'</div>'
+        )
+
+    # ── Additives section ─────────────────────────────────────────────────
+    if add_rows_html:
+        additive_section = (
+            f'<table class="data">'
+            f'<thead><tr><th>Additive</th><th class="num">Products</th>'
+            f'<th class="num">% of range</th></tr></thead>'
+            f'<tbody>{add_rows_html}</tbody>'
+            f'</table>'
+        )
+    else:
+        additive_section = '<p class="hint">No additive data found</p>'
 
     best_rows_html  = _product_rows_html(data["best_products"])
     worst_rows_html = _product_rows_html(data["worst_products"])
@@ -493,239 +540,384 @@ def _render_html(data: dict) -> str:
         f"Retrieved {data['query_date']}"
     )
 
+    ns_pct_missing   = round(100 * ns_missing / total) if total else 0
+    nova_pct_missing = round(100 * nova_miss  / total) if total else 0
+    n_countries      = len(countries)
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{brand} — Food Profile · Open Food Facts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
-    *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    /* ── tokens (workshop design system) ────────────────────────────────── */
     :root {{
-      --bg:       #f0f4f8;
-      --card:     #ffffff;
-      --hdr:      #0f172a;
-      --text:     #1e293b;
-      --muted:    #64748b;
-      --border:   #e2e8f0;
-      --radius:   10px;
-      --shadow:   0 1px 3px rgba(0,0,0,.08), 0 4px 12px rgba(0,0,0,.06);
+      --font-sans: "Inter", system-ui, sans-serif;
+      --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+
+      --bg:           #fafafa;
+      --bg-elev:      #ffffff;
+      --bg-subtle:    #f4f4f5;
+      --fg:           #18181b;
+      --fg-dim:       #71717a;
+      --fg-muted:     #a1a1aa;
+      --border:       #e4e4e7;
+      --border-soft:  #f4f4f5;
+
+      --accent:       #00C853;
+      --accent-soft:  rgba(0, 200, 83, 0.10);
+      --ok:           #16a34a;
+      --warn:         #d97706;
+      --fail:         #dc2626;
+
+      --radius: 4px;
+      --pad:    16px;
+      --gap:    10px;
     }}
-    body {{ font-family: 'Inter', system-ui, -apple-system, sans-serif;
-            background: var(--bg); color: var(--text); line-height: 1.5; }}
-    /* ── Header ────────────────────────────────────────────────────── */
-    header {{ background: var(--hdr); color: #f8fafc; padding: 2rem 2.5rem 1.8rem; }}
-    header .brand-name {{ font-size: 2.6rem; font-weight: 800; letter-spacing: -.02em;
-                          line-height: 1.1; }}
-    header .subtitle {{ font-size: .95rem; color: #94a3b8; margin-top: .35rem; }}
-    header .badge-row {{ display: flex; gap: .6rem; margin-top: 1rem; flex-wrap: wrap; }}
-    header .badge {{ background: rgba(255,255,255,.12); border-radius: 99px;
-                     font-size: .75rem; padding: .25rem .75rem; color: #cbd5e1; }}
-    /* ── Layout ────────────────────────────────────────────────────── */
-    main {{ max-width: 1200px; margin: 0 auto; padding: 1.8rem 1.5rem 3rem; }}
-    .grid-2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin-bottom: 1.2rem; }}
-    .grid-3 {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.2rem; margin-bottom: 1.2rem; }}
-    .grid-4 {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.2rem; margin-bottom: 1.2rem; }}
-    .span-2 {{ grid-column: span 2; }}
-    @media (max-width: 780px) {{
-      .grid-2, .grid-3, .grid-4 {{ grid-template-columns: 1fr; }}
-      .span-2 {{ grid-column: span 1; }}
+
+    @media (prefers-color-scheme: dark) {{
+      :root {{
+        --bg:          #0a0a0a;
+        --bg-elev:     #0f0f10;
+        --bg-subtle:   #131316;
+        --fg:          #d4d4d8;
+        --fg-dim:      #a1a1aa;
+        --fg-muted:    #71717a;
+        --border:      #27272a;
+        --border-soft: #1c1c1f;
+        --accent-soft: rgba(0, 200, 83, 0.14);
+      }}
     }}
-    /* ── Cards ─────────────────────────────────────────────────────── */
-    .card {{ background: var(--card); border-radius: var(--radius);
-             box-shadow: var(--shadow); padding: 1.4rem 1.5rem; }}
-    .card-title {{ font-size: .7rem; font-weight: 700; letter-spacing: .08em;
-                   text-transform: uppercase; color: var(--muted); margin-bottom: 1rem; }}
-    /* ── Hero stats ─────────────────────────────────────────────────── */
-    .hero-stat .stat-num {{ font-size: 2.8rem; font-weight: 800; line-height: 1; }}
-    .hero-stat .stat-lbl {{ font-size: .78rem; color: var(--muted); margin-top: .3rem; }}
-    .hero-stat .stat-sub {{ font-size: .72rem; color: var(--muted); margin-top: .15rem; }}
-    .hero-danger .stat-num {{ color: #dc2626; }}
-    .hero-warning .stat-num {{ color: #d97706; }}
-    .hero-ok      .stat-num {{ color: #16a34a; }}
-    /* ── Nutri-Score badge ──────────────────────────────────────────── */
+
+    /* ── reset & base ────────────────────────────────────────────────────── */
+    *, *::before, *::after {{ box-sizing: border-box; }}
+    html, body {{
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-sans);
+      font-size: 15px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }}
+    body {{ display: flex; flex-direction: column; min-height: 100vh; }}
+    main {{
+      flex: 1;
+      width: 100%;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px var(--pad);
+    }}
+
+    /* ── typography ──────────────────────────────────────────────────────── */
+    h1 {{ font-size: 20px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 var(--pad); }}
+    h2 {{ font-size: 11px; font-weight: 500; text-transform: uppercase;
+         letter-spacing: 0.08em; color: var(--fg-dim);
+         margin: 28px 0 var(--gap); }}
+    h3 {{ font-size: 15px; font-weight: 600; margin: var(--pad) 0 var(--gap); }}
+    p  {{ margin: var(--gap) 0; }}
+    .hint {{ color: var(--fg-dim); font-size: 13px; }}
+    code, .mono {{ font-family: var(--font-mono); font-size: 13px; }}
+    code {{
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-soft);
+      padding: 1px 5px;
+      border-radius: var(--radius);
+    }}
+
+    /* ── data tables ─────────────────────────────────────────────────────── */
+    table.data {{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      font-variant-numeric: tabular-nums;
+    }}
+    table.data th {{
+      text-align: left;
+      padding: 0 14px;
+      height: 38px;
+      background: var(--bg-subtle);
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--fg-dim);
+      border-bottom: 1px solid var(--border);
+    }}
+    table.data td {{
+      padding: 0 14px;
+      height: 38px;
+      vertical-align: middle;
+      border-bottom: 1px solid var(--border-soft);
+    }}
+    table.data tr:last-child td {{ border-bottom: 0; }}
+    table.data tbody tr:hover   {{ background: var(--bg-subtle); }}
+    table.data th.num,
+    table.data td.num {{ text-align: right; }}
+
+    /* ── KPI stat tiles ──────────────────────────────────────────────────── */
+    .stats {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin: var(--pad) 0;
+    }}
+    .stat {{ background: var(--bg-elev); padding: var(--pad); }}
+    .stat .stat-label {{
+      font-size: 11px; font-weight: 500;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--fg-dim); margin-bottom: 6px;
+    }}
+    .stat .stat-value {{
+      font-family: var(--font-mono);
+      font-size: 24px; font-weight: 500;
+      letter-spacing: -0.02em; color: var(--fg);
+      font-variant-numeric: tabular-nums;
+    }}
+    .stat .stat-hint {{ font-size: 12px; color: var(--fg-dim); margin-top: 4px; }}
+    .stat-value.ok   {{ color: var(--ok); }}
+    .stat-value.warn {{ color: var(--warn); }}
+    .stat-value.fail {{ color: var(--fail); }}
+
+    /* ── badges ──────────────────────────────────────────────────────────── */
+    .badge {{
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 0 10px; height: 22px; border-radius: var(--radius);
+      font-size: 12px; font-weight: 500;
+      font-family: var(--font-mono);
+      border: 1px solid var(--border);
+      background: var(--bg-elev); color: var(--fg-dim);
+      text-transform: lowercase;
+    }}
+    .badge::before {{
+      content: ""; display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 999px; background: var(--fg-muted);
+    }}
+
+    /* ── cards ───────────────────────────────────────────────────────────── */
+    .card {{
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: var(--pad);
+      margin: var(--gap) 0;
+    }}
+    .card > *:first-child {{ margin-top: 0; }}
+    .card > *:last-child  {{ margin-bottom: 0; }}
+
+    /* ── page header ─────────────────────────────────────────────────────── */
+    .page-header {{
+      background: var(--bg-subtle);
+      border-bottom: 1px solid var(--border);
+      padding: 28px var(--pad);
+    }}
+    .page-header-inner {{ max-width: 1200px; margin: 0 auto; }}
+    .page-header h1 {{ margin-bottom: 4px; }}
+    .page-subtitle {{ color: var(--fg-dim); font-size: 13px; margin: 0; }}
+    .badge-row {{ display: flex; gap: 6px; margin-top: var(--gap); flex-wrap: wrap; }}
+
+    /* ── 2-column grid ───────────────────────────────────────────────────── */
+    .grid-2 {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--pad);
+      margin: var(--gap) 0;
+    }}
+    @media (max-width: 760px) {{
+      .grid-2 {{ grid-template-columns: 1fr; }}
+    }}
+
+    /* ── chart containers ────────────────────────────────────────────────── */
+    .chart-wrap {{ position: relative; height: 200px; margin: var(--gap) 0; }}
+
+    /* ── Nutri-Score official badges (official colours per design system) ── */
     .ns-badge {{
-      display: inline-block; font-size: .78rem; font-weight: 800;
-      padding: .15em .45em; border-radius: 4px; color: #fff;
-      vertical-align: middle;
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 24px; height: 24px; border-radius: var(--radius);
+      font-size: 12px; font-weight: 700; color: #fff;
     }}
-    .ns-a {{ background: {NS_COLORS['a']}; }}
-    .ns-b {{ background: {NS_COLORS['b']}; }}
-    .ns-c {{ background: {NS_COLORS['c']}; color: #333; }}
-    .ns-d {{ background: {NS_COLORS['d']}; }}
-    .ns-e {{ background: {NS_COLORS['e']}; }}
-    .ns-? {{ background: {NS_COLORS['?']}; color: #555; }}
-    /* ── NOVA badge ────────────────────────────────────────────────── */
+    .ns-a {{ background: #038141; }}
+    .ns-b {{ background: #85BB2F; }}
+    .ns-c {{ background: #FECB02; color: #333; }}
+    .ns-d {{ background: #EE8100; }}
+    .ns-e {{ background: #E63E11; }}
+    .ns-? {{ background: var(--fg-muted); }}
+
+    /* ── NS hero display (large letter in KPI stat tile) ─────────────────── */
+    .ns-hero {{
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 48px; height: 48px; border-radius: var(--radius);
+      font-size: 26px; font-weight: 800; color: #fff;
+    }}
+
+    /* ── NOVA processing badges (official colours per design system) ─────── */
     .nova-badge {{
-      display: inline-block; font-size: .78rem; font-weight: 700;
-      padding: .1em .4em; border-radius: 4px; color: #fff;
-      vertical-align: middle;
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 20px; height: 20px; border-radius: var(--radius);
+      font-size: 11px; font-weight: 700; color: #fff;
+      padding: 0 5px; font-family: var(--font-mono);
     }}
-    .nova-1 {{ background: {NOVA_COLORS[1]}; }}
-    .nova-2 {{ background: {NOVA_COLORS[2]}; }}
-    .nova-3 {{ background: {NOVA_COLORS[3]}; }}
-    .nova-4 {{ background: {NOVA_COLORS[4]}; }}
-    .nova-0 {{ background: {NOVA_COLORS['?']}; color: #555; }}
-    /* ── Large NS display in hero card ─────────────────────────────── */
-    .ns-hero-display {{
-      width: 72px; height: 72px; border-radius: 12px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 2.4rem; font-weight: 900; color: #fff;
-      background: {ns_hero_color}; margin-bottom: .6rem;
-    }}
-    /* ── Charts ────────────────────────────────────────────────────── */
-    .chart-wrap {{ position: relative; }}
-    /* ── Tables ────────────────────────────────────────────────────── */
-    table {{ width: 100%; border-collapse: collapse; font-size: .8rem; }}
-    th {{ font-size: .68rem; font-weight: 600; letter-spacing: .05em;
-          text-transform: uppercase; color: var(--muted);
-          padding: .45rem .6rem; border-bottom: 2px solid var(--border);
-          text-align: left; }}
-    td {{ padding: .45rem .6rem; border-bottom: 1px solid var(--border);
-          vertical-align: middle; }}
-    tr:last-child td {{ border-bottom: none; }}
-    .prod-name {{ font-weight: 500; max-width: 220px;
-                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-    .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
-    .empty {{ color: var(--muted); font-style: italic; text-align: center;
-              padding: 1.5rem 0; }}
-    /* ── Additives ──────────────────────────────────────────────────── */
-    .add-concern td {{ color: #b91c1c; }}
-    .add-concern td:first-child {{ font-weight: 600; }}
-    /* ── Country pills ──────────────────────────────────────────────── */
-    .country-pills {{ display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .2rem; }}
+    .nova-1 {{ background: #4CAF50; }}
+    .nova-2 {{ background: #8BC34A; }}
+    .nova-3 {{ background: #FF9800; }}
+    .nova-4 {{ background: #F44336; }}
+    .nova-0 {{ background: var(--fg-muted); }}
+
+    /* ── country pills ───────────────────────────────────────────────────── */
+    .country-pills {{ display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }}
     .country-pill {{
-      background: #eff6ff; color: #1d4ed8; border-radius: 99px;
-      padding: .2rem .65rem; font-size: .75rem; font-weight: 500;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2px 10px;
+      font-size: 12px;
+      font-family: var(--font-mono);
+      color: var(--fg-dim);
     }}
-    .country-pill small {{ color: #93c5fd; }}
-    /* ── Footer ────────────────────────────────────────────────────── */
-    footer {{ background: var(--hdr); color: #94a3b8; font-size: .75rem;
-              padding: 1.2rem 2.5rem; margin-top: 2rem; line-height: 1.7; }}
-    footer strong {{ color: #cbd5e1; }}
-    footer .caveat {{ color: #64748b; font-size: .7rem; margin-top: .4rem; }}
+    .country-pill small {{ color: var(--fg-muted); }}
+
+    /* ── additive concern rows ───────────────────────────────────────────── */
+    .add-concern td {{ color: var(--fail); }}
+    .add-concern td:first-child {{ font-weight: 600; }}
+
+    /* ── product name cell ───────────────────────────────────────────────── */
+    td.prod-name {{
+      max-width: 220px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }}
+
+    /* ── page footer ─────────────────────────────────────────────────────── */
+    .page-footer {{
+      background: var(--bg-subtle);
+      border-top: 1px solid var(--border);
+      padding: var(--pad);
+      font-size: 12px;
+      color: var(--fg-dim);
+      line-height: 1.8;
+    }}
+    .page-footer .footer-inner {{ max-width: 1200px; margin: 0 auto; }}
+    .page-footer strong {{ color: var(--fg); }}
+    .page-footer .caveat {{
+      color: var(--fg-muted);
+      font-size: 11px;
+      margin-top: 6px;
+    }}
   </style>
 </head>
 <body>
 
-<!-- ── Header ──────────────────────────────────────────────────────── -->
-<header>
-  <div class="brand-name">{brand}</div>
-  <div class="subtitle">Food Product Profile · Open Food Facts</div>
-  <div class="badge-row">
-    <span class="badge">🛒 {total:,} products</span>
-    <span class="badge">🌍 {len(countries)} countries</span>
-    <span class="badge">📅 {data['query_date']}</span>
-    <span class="badge">📂 {data['source_label']}</span>
+<!-- ── Page header ─────────────────────────────────────────────────────── -->
+<div class="page-header">
+  <div class="page-header-inner">
+    <h1>{brand} — Food Profile</h1>
+    <p class="page-subtitle">Open Food Facts · {data['query_date']} · {data['source_label']}</p>
+    <div class="badge-row">
+      <span class="badge">{total:,} products</span>
+      <span class="badge">{n_countries} {'country' if n_countries == 1 else 'countries'}</span>
+      <span class="badge">{data['ns_coverage']}% nutri-score coverage</span>
+      <span class="badge">{data['nova_coverage']}% nova coverage</span>
+    </div>
   </div>
-</header>
+</div>
 
-<!-- ── Main ────────────────────────────────────────────────────────── -->
+<!-- ── Main ────────────────────────────────────────────────────────────── -->
 <main>
 
-  <!-- Hero stats row -->
-  <div class="grid-4" style="margin-bottom:1.2rem">
+  <h2>Overview</h2>
+  <div class="stats">
 
-    <!-- Total products -->
-    <div class="card hero-stat">
-      <div class="card-title">Products in database</div>
-      <div class="stat-num">{total:,}</div>
-      <div class="stat-lbl">across {len(countries)} {'country' if len(countries)==1 else 'countries'}</div>
+    <div class="stat">
+      <div class="stat-label">Products in database</div>
+      <div class="stat-value">{total:,}</div>
+      <div class="stat-hint">across {n_countries} {'country' if n_countries == 1 else 'countries'}</div>
     </div>
 
-    <!-- Dominant Nutri-Score -->
-    <div class="card hero-stat">
-      <div class="card-title">Most common Nutri-Score</div>
-      <div class="ns-hero-display">{dominant_ns.upper()}</div>
-      <div class="stat-lbl">{data['ns_coverage']}% of products scored</div>
+    <div class="stat">
+      <div class="stat-label">Dominant Nutri-Score</div>
+      <div class="stat-value" style="font-size:16px;margin-top:4px">
+        <span class="ns-hero" style="background:{ns_hero_color};{ns_hero_text}">{dominant_ns.upper()}</span>
+      </div>
+      <div class="stat-hint">{data['ns_coverage']}% of products scored</div>
     </div>
 
-    <!-- NOVA 4 % -->
-    <div class="card hero-stat {nova4_hero_cls}">
-      <div class="card-title">Ultra-processed (NOVA 4)</div>
-      <div class="stat-num">{nova4_pct}%</div>
-      <div class="stat-lbl">of products with NOVA data</div>
-      <div class="stat-sub">{data['nova_coverage']}% coverage</div>
+    <div class="stat">
+      <div class="stat-label">Ultra-processed (NOVA 4)</div>
+      <div class="stat-value {nova4_stat_cls}">{nova4_pct}%</div>
+      <div class="stat-hint">of products with NOVA data</div>
+      <div class="stat-hint">{data['nova_coverage']}% coverage</div>
     </div>
 
-    <!-- Avg sugar (if available) -->
-    <div class="card hero-stat">
-      <div class="card-title">Avg. sugar per 100g</div>
-      <div class="stat-num" style="font-size:2.2rem">{_fmt(bn.get('sugars'), 'g')}</div>
-      <div class="stat-lbl">{'vs. ' + _fmt(cn.get('sugars'), 'g') + ' ' + data['cat_label_short'] if cn else 'from ' + str(bn.get('n', 0)) + ' products'}</div>
+    <div class="stat">
+      <div class="stat-label">Avg. sugar per 100g</div>
+      <div class="stat-value">{_fmt(bn.get('sugars'), 'g')}</div>
+      <div class="stat-hint">{sugar_hint}</div>
     </div>
 
   </div>
 
-  <!-- Nutri-Score + NOVA -->
+  <h2>Nutrition &amp; Processing Scores</h2>
   <div class="grid-2">
 
     <div class="card">
-      <div class="card-title">Nutri-Score distribution</div>
-      <div class="chart-wrap" style="height:180px">
-        <canvas id="nsChart"></canvas>
-      </div>
-      <div style="font-size:.72rem;color:var(--muted);margin-top:.6rem">
-        A = best nutrition &nbsp;·&nbsp; E = worst &nbsp;·&nbsp;
-        {ns_missing} products have no score ({round(100*ns_missing/total) if total else 0}%)
-      </div>
+      <h3>Nutri-Score distribution</h3>
+      <div class="chart-wrap"><canvas id="nsChart"></canvas></div>
+      <p class="hint">A = best nutrition · E = worst · {ns_missing} products unscored ({ns_pct_missing}%)</p>
     </div>
 
     <div class="card">
-      <div class="card-title">NOVA processing level</div>
-      <div class="chart-wrap" style="height:180px">
-        <canvas id="novaChart"></canvas>
-      </div>
-      <div style="font-size:.72rem;color:var(--muted);margin-top:.6rem">
-        NOVA 4 = ultra-processed &nbsp;·&nbsp;
-        {nova_miss} products have no NOVA data ({round(100*nova_miss/total) if total else 0}%)
-      </div>
+      <h3>NOVA processing level</h3>
+      <div class="chart-wrap"><canvas id="novaChart"></canvas></div>
+      <p class="hint">NOVA 4 = ultra-processed · {nova_miss} products without NOVA data ({nova_pct_missing}%)</p>
     </div>
 
   </div>
 
-  <!-- Nutrition comparison + Categories -->
   <div class="grid-2">
-
-    {'<div class="card"><div class="card-title">Nutrition per 100g — brand vs. ' + data['cat_label_short'] + '</div><div class="chart-wrap" style="height:200px"><canvas id="nutrChart"></canvas></div></div>' if has_nutr_compare else '<div class="card"><div class="card-title">Average nutrition per 100g</div><table><thead><tr><th>Nutrient</th><th class=\'num\'>Brand avg.</th></tr></thead><tbody>' + "".join(f'<tr><td>{l}</td><td class="num">{_fmt(bn.get(m), "g/100g")}</td></tr>' for l, m in zip(nutr_labels, nutr_metrics)) + '</tbody></table></div>'}
-
+    {nutr_section}
     <div class="card">
-      <div class="card-title">Top product categories</div>
-      <div class="chart-wrap" style="height:200px">
-        <canvas id="catChart"></canvas>
-      </div>
+      <h3>Top product categories</h3>
+      <div class="chart-wrap"><canvas id="catChart"></canvas></div>
     </div>
-
   </div>
 
-  <!-- Additives + Countries -->
+  <h2>Additives &amp; Geography</h2>
   <div class="grid-2">
 
     <div class="card">
-      <div class="card-title">Most common additives (E-numbers)</div>
-      {'<table><thead><tr><th>Additive</th><th class="num">Products</th><th class="num">%</th></tr></thead><tbody>' + add_rows + '</tbody></table>' if additives else '<p style="color:var(--muted);font-size:.85rem;padding:.5rem 0">No additive data found</p>'}
-      <div style="font-size:.7rem;color:var(--muted);margin-top:.6rem">
-        ⚠️ = additives of journalistic concern (controversial or EU-regulated)
-      </div>
+      <h3>Most common additives (E-numbers)</h3>
+      {additive_section}
+      <p class="hint" style="margin-top:var(--pad)">⚠️ = additives of journalistic concern (controversial or EU-regulated)</p>
     </div>
 
     <div class="card">
-      <div class="card-title">Countries where products are sold</div>
+      <h3>Countries where products are sold</h3>
       <div class="country-pills">{country_pills}</div>
-      <div style="font-size:.72rem;color:var(--muted);margin-top:.8rem">
-        Based on countries_tags in Open Food Facts. One product can appear in multiple countries.
-      </div>
+      <p class="hint" style="margin-top:var(--pad)">Based on <code>countries_tags</code> in Open Food Facts. One product may appear in multiple countries.</p>
     </div>
 
   </div>
 
-  <!-- Best & Worst products -->
+  <h2>Product Spotlight</h2>
   <div class="grid-2">
 
     <div class="card">
-      <div class="card-title">✅ Best products (Nutri-Score A or B)</div>
-      <table>
+      <h3>Best products — Nutri-Score A or B</h3>
+      <table class="data">
         <thead><tr>
           <th>Product</th><th>Score</th><th>NOVA</th>
           <th class="num">Sugar</th><th class="num">Salt</th>
@@ -735,8 +927,8 @@ def _render_html(data: dict) -> str:
     </div>
 
     <div class="card">
-      <div class="card-title">🔴 Lowest Nutri-Score products (D or E)</div>
-      <table>
+      <h3>Lowest-scoring products — D or E</h3>
+      <table class="data">
         <thead><tr>
           <th>Product</th><th>Score</th><th>NOVA</th>
           <th class="num">Sugar</th><th class="num">Salt</th>
@@ -749,21 +941,29 @@ def _render_html(data: dict) -> str:
 
 </main>
 
-<!-- ── Footer ──────────────────────────────────────────────────────── -->
-<footer>
-  <strong>Data: Open Food Facts (openfoodfacts.org), ODbL v1.0</strong><br>
-  {source_note}
-  <div class="caveat">
-    Caveats: Open Food Facts is a crowdsourced database — coverage and data completeness vary.
-    Brand name matching uses fuzzy search; results may include products from related brands.
-    Nutri-Score and NOVA values are as recorded in OFF and may not reflect the current product formulation.
-    This analysis is for journalistic investigation and should be verified against official product data before publication.
+<!-- ── Footer ──────────────────────────────────────────────────────────── -->
+<footer class="page-footer">
+  <div class="footer-inner">
+    <strong>Data: Open Food Facts (openfoodfacts.org), ODbL v1.0</strong><br>
+    {source_note}
+    <div class="caveat">
+      Caveats: Open Food Facts is a crowdsourced database — coverage and data completeness vary.
+      Brand name matching uses fuzzy search; results may include products from related brands.
+      Nutri-Score and NOVA values are as recorded in OFF and may not reflect the current product formulation.
+      This analysis is for journalistic investigation and should be verified against official product data before publication.
+    </div>
   </div>
 </footer>
 
-<!-- ── Charts ──────────────────────────────────────────────────────── -->
+<!-- ── Charts ──────────────────────────────────────────────────────────── -->
 <script>
 const DATA = {json.dumps(chart_data, ensure_ascii=False)};
+
+// Design-system chart palette (zinc neutrals + green accent)
+const DS_BORDER  = '#e4e4e7';  // --border
+const DS_FG_DIM  = '#71717a';  // --fg-dim
+const DS_ACCENT  = '#00C853';  // --accent
+const DS_NEUTRAL = '#a1a1aa';  // --fg-muted
 
 // Nutri-Score horizontal stacked bar
 new Chart(document.getElementById('nsChart'), {{
@@ -779,15 +979,15 @@ new Chart(document.getElementById('nsChart'), {{
   options: {{
     indexAxis: 'y', responsive: true, maintainAspectRatio: false,
     plugins: {{
-      legend: {{ position: 'bottom', labels: {{ boxWidth: 12, font: {{ size: 11 }} }} }},
+      legend: {{ position: 'bottom', labels: {{ boxWidth: 12, font: {{ size: 11 }}, color: DS_FG_DIM }} }},
       tooltip: {{
         callbacks: {{
-          label: ctx => ` ${{ctx.dataset.label}}: ${{ctx.raw}} products (${{Math.round(100*ctx.raw/{total}||0)}}%)`
+          label: ctx => ` ${{ctx.dataset.label}}: ${{ctx.raw}} products (${{Math.round(100 * ctx.raw / {total} || 0)}}%)`
         }}
       }}
     }},
     scales: {{
-      x: {{ stacked: true, grid: {{ display: false }}, ticks: {{ font: {{ size: 10 }} }} }},
+      x: {{ stacked: true, grid: {{ color: DS_BORDER }}, ticks: {{ font: {{ size: 10 }}, color: DS_FG_DIM }} }},
       y: {{ stacked: true, display: false }}
     }}
   }}
@@ -798,61 +998,60 @@ new Chart(document.getElementById('novaChart'), {{
   type: 'doughnut',
   data: {{
     labels: DATA.nova.labels,
-    datasets: [{{ data: DATA.nova.values, backgroundColor: DATA.nova.colors,
-                  borderWidth: 2, borderColor: '#fff' }}]
+    datasets: [{{ data: DATA.nova.values, backgroundColor: DATA.nova.colors, borderWidth: 0 }}]
   }},
   options: {{
     responsive: true, maintainAspectRatio: false,
     cutout: '62%',
     plugins: {{
-      legend: {{ position: 'right', labels: {{ boxWidth: 12, font: {{ size: 11 }} }} }},
+      legend: {{ position: 'right', labels: {{ boxWidth: 12, font: {{ size: 11 }}, color: DS_FG_DIM }} }},
       tooltip: {{
         callbacks: {{
-          label: ctx => ` ${{ctx.label}}: ${{ctx.raw}} (${{Math.round(100*ctx.raw/{total}||0)}}%)`
+          label: ctx => ` ${{ctx.label}}: ${{ctx.raw}} (${{Math.round(100 * ctx.raw / {total} || 0)}}%)`
         }}
       }}
     }}
   }}
 }});
 
-// Categories horizontal bar
+// Categories horizontal bar (accent colour — primary data series)
 new Chart(document.getElementById('catChart'), {{
   type: 'bar',
   data: {{
     labels: DATA.cats.labels,
     datasets: [{{ label: 'Products', data: DATA.cats.values,
-                  backgroundColor: '#3b82f6', borderRadius: 4 }}]
+                  backgroundColor: DS_ACCENT, borderRadius: 2 }}]
   }},
   options: {{
     indexAxis: 'y', responsive: true, maintainAspectRatio: false,
     plugins: {{ legend: {{ display: false }} }},
     scales: {{
-      x: {{ grid: {{ color: '#f1f5f9' }}, ticks: {{ font: {{ size: 10 }} }} }},
-      y: {{ ticks: {{ font: {{ size: 10 }} }} }}
+      x: {{ grid: {{ color: DS_BORDER }}, ticks: {{ font: {{ size: 10 }}, color: DS_FG_DIM }} }},
+      y: {{ grid: {{ display: false }}, ticks: {{ font: {{ size: 10 }}, color: DS_FG_DIM }} }}
     }}
   }}
 }});
 
-// Nutrition comparison (only rendered if has_compare)
+// Nutrition comparison (brand = neutral, category = accent)
 if (DATA.nutr.has_compare && document.getElementById('nutrChart')) {{
   new Chart(document.getElementById('nutrChart'), {{
     type: 'bar',
     data: {{
       labels: DATA.nutr.labels,
       datasets: [
-        {{ label: {json.dumps(brand)}, data: DATA.nutr.brand, backgroundColor: '#0f172a', borderRadius: 3 }},
-        {{ label: DATA.nutr.cat_label, data: DATA.nutr.category, backgroundColor: '#93c5fd', borderRadius: 3 }},
+        {{ label: {json.dumps(brand)},      data: DATA.nutr.brand,    backgroundColor: DS_NEUTRAL, borderRadius: 2 }},
+        {{ label: DATA.nutr.cat_label, data: DATA.nutr.category, backgroundColor: DS_ACCENT,  borderRadius: 2 }},
       ]
     }},
     options: {{
       responsive: true, maintainAspectRatio: false,
       plugins: {{
-        legend: {{ position: 'bottom', labels: {{ boxWidth: 12, font: {{ size: 11 }} }} }},
+        legend: {{ position: 'bottom', labels: {{ boxWidth: 12, font: {{ size: 11 }}, color: DS_FG_DIM }} }},
         tooltip: {{ callbacks: {{ label: ctx => ` ${{ctx.dataset.label}}: ${{ctx.raw}}g/100g` }} }}
       }},
       scales: {{
-        x: {{ ticks: {{ font: {{ size: 10 }} }} }},
-        y: {{ grid: {{ color: '#f1f5f9' }}, ticks: {{ font: {{ size: 10 }}, callback: v => v+'g' }} }}
+        x: {{ ticks: {{ font: {{ size: 10 }}, color: DS_FG_DIM }} }},
+        y: {{ grid: {{ color: DS_BORDER }}, ticks: {{ font: {{ size: 10 }}, color: DS_FG_DIM, callback: v => v + 'g' }} }}
       }}
     }}
   }});
